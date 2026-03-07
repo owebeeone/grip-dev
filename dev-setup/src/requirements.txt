@@ -1,3 +1,4 @@
 commentjson
 GitPython
-
+packaging>=23.1
+tomli

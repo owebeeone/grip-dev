@@ -11,5 +11,8 @@
     "terminal.integrated.env.osx": {
         "PYTHONPATH": "${workspaceFolder}${pathSeparator}grip-py${pathSeparator}src"
     },
-    "python.envFile": "${workspaceFolder}/.vscode/.env"
+    "python.envFile": "${workspaceFolder}/.vscode/.env",
+    "cursorpyright.analysis.extraPaths": [
+        "${workspaceFolder}/grip-py/src"
+    ]
 }

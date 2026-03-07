@@ -30,6 +30,12 @@ Install dev-setup script dependencies:
 pip install -r dev-setup/src/requirements.txt
 ```
 
+Collect workspace runtime + test dependencies and install them into the active `uv` environment:
+
+```bash
+python dev-setup/src/collect_dependencies/collect_dependencies.py --workspace-root . --uv-install
+```
+
 Generate or refresh VS Code workspace config:
 
 ```bash
