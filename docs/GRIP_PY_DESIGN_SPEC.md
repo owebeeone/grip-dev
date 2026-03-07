@@ -3,6 +3,9 @@ Date: 2026-03-07
 Status: Draft  
 Scope: `grip-py` key model and key registry only
 
+Related proposal:
+- `docs/GRIP_PY_DRIP_PROPOSAL.md` defines the proposed Drip/use_grip API for the next runtime phase.
+
 ## 1. Purpose
 This document defines the initial `grip-py` package structure and API for:
 - `Grip[T]`
