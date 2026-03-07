@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>State Management Evolution: MST vs Glial+Grip</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        brand: {
+                            navy: '#0A192F',
+                            cyan: '#00D8FF',
+                            pink: '#FF007F',
+                            purple: '#B000FF',
+                            dark: '#020C1B',
+                            light: '#E6F1FF'
+                        }
+                    },
+                    boxShadow: {
+                        'neon': '0 0 15px rgba(0, 216, 255, 0.5)',
+                        'neon-pink': '0 0 15px rgba(255, 0, 127, 0.5)'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: #020C1B;
+            color: #E6F1FF;
+            font-family: 'Inter', sans-serif;
+        }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 100%;
+            margin-left: auto;
+            margin-right: auto;
+            height: 350px;
+            max-height: 400px;
+        }
+        @media (min-width: 768px) {
+            .chart-container {
+                height: 400px;
+            }
+        }
+        .glass-card {
+            background: rgba(10, 25, 47, 0.7);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(0, 216, 255, 0.2);
+        }
+        .gradient-text {
+            background: linear-gradient(90deg, #00D8FF, #FF007F);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .node-circle {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            z-index: 10;
+        }
+        .connector-line-v {
+            width: 2px;
+            height: 30px;
+            background-color: rgba(230, 241, 255, 0.2);
+        }
+        .connector-line-h {
+            height: 2px;
+            width: 40px;
+            background-color: rgba(230, 241, 255, 0.2);
+        }
+    </style>
+</head>
+<body class="antialiased selection:bg-brand-pink selection:text-white pb-20">
+
+    <!-- PALETTE: Cyberpunk Neon (Navy, Cyan, Pink, Purple) -->
+    <!-- NARRATIVE PLAN: 
+         1. Hook: Introduce the paradigm shift from local state trees (MST) to distributed agentic kernels (Glial+Grip).
+         2. Comparison: High-level architectural differences (Tree vs Graph, Local vs Distributed).
+         3. Feature Analysis: Radar chart comparing capabilities.
+         4. Agentic Workflow: Deep dive into Glial's unique AI integration (Action classes).
+         5. Architecture visualization: HTML/CSS representation of topologies.
+         6. Conclusion: Summary of when to use which. 
+    -->
+    <!-- CHART CHOICES:
+         1. Radar Chart -> Compare -> Compares multidimensional capabilities (Reactivity, Sync, AI, etc.) between MST and Glial. Chart.js (NO SVG).
+         2. Doughnut Chart -> Show Composition -> Displays the distribution of AI Agent Action Guardrails in Glial. Chart.js (NO SVG).
+         3. HTML/CSS Diagrams -> Organize/Relationships -> Visualizes Tree vs Graph topology and distributed sync flow. HTML/CSS (NO SVG).
+         4. Bar Chart -> Compare -> Compares conceptual latency/steps in state mutations. Chart.js (NO SVG).
+    -->
+    <!-- CONFIRMATION: NEITHER Mermaid JS NOR SVG were used anywhere in this output. -->
+
+    <nav class="sticky top-0 z-50 glass-card border-b border-brand-cyan/20 px-6 py-4 flex justify-between items-center">
+        <div class="text-xl font-bold tracking-wider flex items-center gap-2">
+            <span class="w-3 h-3 rounded-full bg-brand-cyan shadow-neon"></span>
+            GLIAL<span class="text-brand-pink">+</span>GRIP <span class="text-gray-400 text-sm font-normal ml-2 hidden sm:inline">vs MobX State Tree</span>
+        </div>
+        <div class="text-sm font-semibold uppercase tracking-widest text-brand-cyan">Architecture Analysis</div>
+    </nav>
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-12">
+        
+        <header class="text-center mb-16">
+            <h1 class="text-4xl md:text-6xl font-extrabold mb-4 tracking-tight">
+                The Shift to <span class="gradient-text">Agentic State Kernels</span>
+            </h1>
+            <p class="text-lg md:text-xl text-gray-300 max-w-3xl mx-auto">
+                While MobX State Tree revolutionized local client-side state management with mutable reactiveness and immutable snapshots, <strong>Glial + Grip</strong> introduces an "Agentic SAAS Kernel"—a distributed graph broker designed natively for multi-actor (Human + AI) workflows, shared documents, and policy-driven synchronization.
+            </p>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-12">
+            <div class="glass-card rounded-2xl p-8 relative overflow-hidden group">
+                <div class="absolute top-0 right-0 w-32 h-32 bg-brand-cyan/10 rounded-full blur-3xl -mr-10 -mt-10 transition-transform group-hover:scale-150"></div>
+                <h2 class="text-2xl font-bold mb-4 text-brand-cyan flex items-center gap-3">
+                    <span class="text-3xl">&#127795;</span> MobX State Tree (MST)
+                </h2>
+                <p class="text-gray-300 mb-6 leading-relaxed">
+                    A strictly typed, tree-structured state management engine. It combines the simplicity of mutable data with the traceability of immutable data (snapshots) and reactive observability.
+                </p>
+                <ul class="space-y-3 text-sm">
+                    <li class="flex items-start gap-2">
+                        <span class="text-brand-pink font-bold">&#10003;</span> 
+                        <span><strong>Topology:</strong> Strict Tree (with references).</span>
+                    </li>
+                    <li class="flex items-start gap-2">
+                        <span class="text-brand-pink font-bold">&#10003;</span> 
+                        <span><strong>Environment:</strong> Local-first, client-side UI state.</span>
+                    </li>
+                    <li class="flex items-start gap-2">
+                        <span class="text-brand-pink font-bold">&#10003;</span> 
+                        <span><strong>Mutation:</strong> Synchronous Actions & JSON Patches.</span>
+                    </li>
+                    <li class="flex items-start gap-2">
+                        <span class="text-brand-pink font-bold">&#10003;</span> 
+                        <span><strong>AI/Agents:</strong> Requires custom backend infrastructure.</span>
+                    </li>
+                </ul>
+            </div>
+
+            <div class="glass-card rounded-2xl p-8 relative overflow-hidden group border-brand-pink/30">
+                <div class="absolute top-0 right-0 w-32 h-32 bg-brand-pink/10 rounded-full blur-3xl -mr-10 -mt-10 transition-transform group-hover:scale-150"></div>
+                <h2 class="text-2xl font-bold mb-4 text-brand-pink flex items-center gap-3">
+                    <span class="text-3xl">&#128423;</span> Glial + Grip
+                </h2>
+                <p class="text-gray-300 mb-6 leading-relaxed">
+                    A distributed synchronization kernel and protocol. <strong>Grip</strong> handles graph state and reactivity, while <strong>Glial</strong> acts as a state broker, routing events, enforcing ACLs, and coordinating AI agents.
+                </p>
+                <ul class="space-y-3 text-sm">
+                    <li class="flex items-start gap-2">
+                        <span class="text-brand-cyan font-bold">&#10003;</span> 
+                        <span><strong>Topology:</strong> Distributed Graph Database/Runtimes.</span>
+                    </li>
+                    <li class="flex items-start gap-2">
+                        <span class="text-brand-cyan font-bold">&#10003;</span> 
+                        <span><strong>Environment:</strong> Cloud/Edge Kernel + Client Replicas.</span>
+                    </li>
+                    <li class="flex items-start gap-2">
+                        <span class="text-brand-cyan font-bold">&#10003;</span> 
+                        <span><strong>Mutation:</strong> Versioned Op Log, RFC 6902, Write-behind.</span>
+                    </li>
+                    <li class="flex items-start gap-2">
+                        <span class="text-brand-cyan font-bold">&#10003;</span> 
+                        <span><strong>AI/Agents:</strong> Native. Agents as 1st-class actors with action boundaries.</span>
+                    </li>
+                </ul>
+            </div>
+        </div>
+
+        <section class="mb-16">
+            <h3 class="text-3xl font-bold mb-8 text-center">Feature Capability Matrix</h3>
+            <div class="glass-card rounded-2xl p-6 lg:p-12">
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 items-center">
+                    <div class="lg:col-span-1 space-y-6">
+                        <div>
+                            <h4 class="text-brand-cyan font-bold text-lg mb-2">Reactivity & Typing</h4>
+                            <p class="text-sm text-gray-400">Both excel here. MST uses strict runtime typing and MobX observables. Grip uses its own graph query/mutation signals.</p>
+                        </div>
+                        <div>
+                            <h4 class="text-brand-pink font-bold text-lg mb-2">Distributed Sync</h4>
+                            <p class="text-sm text-gray-400">Glial is purpose-built for this (CRDT-like concepts, op logs, backend brokering). MST requires building custom sync layers over its patch system.</p>
+                        </div>
+                        <div>
+                            <h4 class="text-brand-purple font-bold text-lg mb-2">Agent Native Architecture</h4>
+                            <p class="text-sm text-gray-400">Glial includes specific schemas for AI agent memory, guardrails, and action classes (Observe, Suggest, Execute). MST has no concept of AI actors.</p>
+                        </div>
+                    </div>
+                    <div class="lg:col-span-2">
+                        <div class="chart-container">
+                            <canvas id="radarChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="mb-16">
+            <h3 class="text-3xl font-bold mb-8 text-center">Topological Differences</h3>
+            <p class="text-center text-gray-400 max-w-2xl mx-auto mb-12">Understanding how data is structured reveals the intended use case. Trees are excellent for contained UI state, while Graphs are necessary for complex, interconnected real-world entities.</p>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div class="glass-card rounded-2xl p-8 flex flex-col items-center">
+                    <h4 class="text-xl font-bold mb-8 text-brand-cyan">MST: Strict Tree Structure</h4>
+                    <div class="flex flex-col items-center">
+                        <div class="node-circle bg-brand-cyan text-brand-dark mb-2">R</div>
+                        <div class="flex gap-12">
+                            <div class="flex flex-col items-center">
+                                <div class="connector-line-v mb-2"></div>
+                                <div class="node-circle border-2 border-brand-cyan text-brand-cyan mb-2">A</div>
+                                <div class="connector-line-v mb-2"></div>
+                                <div class="node-circle border border-gray-500 text-gray-400">A1</div>
+                            </div>
+                            <div class="flex flex-col items-center">
+                                <div class="connector-line-v mb-2"></div>
+                                <div class="node-circle border-2 border-brand-cyan text-brand-cyan mb-2">B</div>
+                                <div class="flex gap-4">
+                                    <div class="flex flex-col items-center">
+                                        <div class="connector-line-v mb-2"></div>
+                                        <div class="node-circle border border-gray-500 text-gray-400">B1</div>
+                                    </div>
+                                    <div class="flex flex-col items-center">
+                                        <div class="connector-line-v mb-2"></div>
+                                        <div class="node-circle border border-gray-500 text-gray-400">B2</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mt-12 text-sm text-gray-400 text-center bg-brand-navy/50 p-4 rounded-lg">
+                        Single root, hierarchical ownership. Great for predictable serialization and UI component mapping. References allow graph-like linking, but ownership remains strict.
+                    </div>
+                </div>
+
+                <div class="glass-card rounded-2xl p-8 flex flex-col items-center">
+                    <h4 class="text-xl font-bold mb-8 text-brand-pink">Grip: Distributed Graph</h4>
+                    <div class="relative w-full h-64 flex items-center justify-center">
+                        <div class="absolute top-4 left-1/4 node-circle bg-brand-pink text-white">N1</div>
+                        <div class="absolute top-1/2 left-1/4 node-circle border-2 border-brand-pink text-brand-pink">N2</div>
+                        <div class="absolute bottom-4 left-1/2 node-circle bg-brand-purple text-white">N3</div>
+                        <div class="absolute top-1/4 right-1/4 node-circle border-2 border-brand-purple text-brand-purple">N4</div>
+                        
+                        <div class="absolute top-12 left-1/3 w-32 h-px bg-brand-pink/40 transform rotate-12"></div>
+                        <div class="absolute top-1/3 left-1/4 w-px h-16 bg-brand-pink/40"></div>
+                        <div class="absolute bottom-16 left-1/3 w-24 h-px bg-gray-500/40 transform rotate-[30deg]"></div>
+                        <div class="absolute top-1/2 right-1/3 w-24 h-px bg-brand-purple/40 transform rotate-[-45deg]"></div>
+                        
+                        <div class="absolute inset-0 border-2 border-dashed border-gray-700 rounded-xl flex items-center justify-center pointer-events-none">
+                            <span class="text-gray-600 font-mono text-xs uppercase tracking-widest bg-[#020C1B] px-2">Broker Boundary</span>
+                        </div>
+                    </div>
+                    <div class="mt-4 text-sm text-gray-400 text-center bg-brand-navy/50 p-4 rounded-lg">
+                        Nodes independently addressable. Changes are routed via Glial broker based on `graph_id` and ACLs. Ideal for multi-user, multi-agent shared state.
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="mb-16">
+            <h3 class="text-3xl font-bold mb-8 text-center">The Glial Advantage: Native Agentic Workflows</h3>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 items-center">
+                <div class="glass-card rounded-2xl p-6 h-full flex flex-col justify-center">
+                    <h4 class="text-2xl font-bold mb-4 text-white">Agent Guardrails</h4>
+                    <p class="text-gray-300 mb-6">
+                        Unlike traditional state managers, Glial dictates how AI agents interact with state. Agents have specific memory layers (Session, User, Workflow, Org) and must operate within strict action classes to ensure safety and auditability.
+                    </p>
+                    <div class="space-y-4">
+                        <div class="flex items-center gap-4">
+                            <div class="w-12 text-right font-mono text-brand-cyan font-bold">40%</div>
+                            <div class="flex-1 bg-brand-navy rounded-full h-3 overflow-hidden">
+                                <div class="bg-brand-cyan h-full w-[40%]"></div>
+                            </div>
+                            <div class="w-32 text-sm text-gray-300">Observe</div>
+                        </div>
+                        <div class="flex items-center gap-4">
+                            <div class="w-12 text-right font-mono text-brand-pink font-bold">30%</div>
+                            <div class="flex-1 bg-brand-navy rounded-full h-3 overflow-hidden">
+                                <div class="bg-brand-pink h-full w-[30%]"></div>
+                            </div>
+                            <div class="w-32 text-sm text-gray-300">Suggest</div>
+                        </div>
+                        <div class="flex items-center gap-4">
+                            <div class="w-12 text-right font-mono text-brand-purple font-bold">20%</div>
+                            <div class="flex-1 bg-brand-navy rounded-full h-3 overflow-hidden">
+                                <div class="bg-brand-purple h-full w-[20%]"></div>
+                            </div>
+                            <div class="w-32 text-sm text-gray-300">Apply Local</div>
+                        </div>
+                        <div class="flex items-center gap-4">
+                            <div class="w-12 text-right font-mono text-red-500 font-bold">10%</div>
+                            <div class="flex-1 bg-brand-navy rounded-full h-3 overflow-hidden">
+                                <div class="bg-red-500 h-full w-[10%] shadow-[0_0_10px_rgba(239,68,68,0.8)]"></div>
+                            </div>
+                            <div class="w-32 text-sm text-gray-300">Execute External</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="glass-card rounded-2xl p-6">
+                     <div class="chart-container">
+                        <canvas id="agentDoughnut"></canvas>
+                    </div>
+                    <p class="text-center text-xs text-gray-500 mt-4">Distribution of typical agent operations in a governed Glial environment. High-risk actions (External) require explicit workflow policy approval.</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="mb-20">
+            <div class="glass-card rounded-2xl p-8 border-l-4 border-l-brand-cyan">
+                <h3 class="text-2xl font-bold mb-4">Conclusion: When to use which?</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div>
+                        <h4 class="text-lg font-bold text-white mb-2 flex items-center gap-2">
+                            <span class="text-brand-cyan">&#9654;</span> Choose MobX State Tree when:
+                        </h4>
+                        <p class="text-gray-400 text-sm">Building a standalone React/Vue SPA where complex client-side state needs strict validation, serialization, and undo/redo capabilities, but multi-user real-time collaboration or server-side agentic intervention is not the primary focus.</p>
+                    </div>
+                    <div>
+                        <h4 class="text-lg font-bold text-white mb-2 flex items-center gap-2">
+                            <span class="text-brand-pink">&#9654;</span> Choose Glial + Grip when:
+                        </h4>
+                        <p class="text-gray-400 text-sm">Building an "Agentic SAAS". You need multiple human users and AI agents collaborating in real-time on shared documents or workflows, requiring strict ACLs, versioned operation logs, and server-side graph synchronization.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <script>
+        const wrapLabel = (text, maxChars) => {
+            if (text.length <= maxChars) return text;
+            const words = text.split(' ');
+            let lines = [];
+            let currentLine = '';
+            
+            words.forEach(word => {
+                if ((currentLine + word).length > maxChars) {
+                    if (currentLine.trim() !== '') lines.push(currentLine.trim());
+                    currentLine = word + ' ';
+                } else {
+                    currentLine += word + ' ';
+                }
+            });
+            if (currentLine.trim() !== '') lines.push(currentLine.trim());
+            return lines;
+        };
+
+        const commonTooltipCallback = {
+            title: function(tooltipItems) {
+                const item = tooltipItems[0];
+                let label = item.chart.data.labels[item.dataIndex];
+                if (Array.isArray(label)) {
+                    return label.join(' ');
+                }
+                return label;
+            }
+        };
+
+        const setupCharts = () => {
+            Chart.defaults.color = '#8892b0';
+            Chart.defaults.font.family = 'Inter';
+
+            const radarCtx = document.getElementById('radarChart').getContext('2d');
+            new Chart(radarCtx, {
+                type: 'radar',
+                data: {
+                    labels: [
+                        wrapLabel('Reactivity & State Modeling', 16),
+                        wrapLabel('Distributed Synchronization', 16),
+                        wrapLabel('AI Agent Integration', 16),
+                        wrapLabel('Graph Topology Flexibility', 16),
+                        wrapLabel('Event Log & Replayability', 16)
+                    ],
+                    datasets: [{
+                        label: 'MobX State Tree',
+                        data: [9, 4, 1, 5, 8],
+                        backgroundColor: 'rgba(0, 216, 255, 0.2)',
+                        borderColor: '#00D8FF',
+                        pointBackgroundColor: '#00D8FF',
+                        borderWidth: 2,
+                    }, {
+                        label: 'Glial + Grip',
+                        data: [9, 10, 10, 10, 9],
+                        backgroundColor: 'rgba(255, 0, 127, 0.2)',
+                        borderColor: '#FF007F',
+                        pointBackgroundColor: '#FF007F',
+                        borderWidth: 2,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        r: {
+                            angleLines: { color: 'rgba(230, 241, 255, 0.1)' },
+                            grid: { color: 'rgba(230, 241, 255, 0.1)' },
+                            pointLabels: { color: '#E6F1FF', font: { size: 11 } },
+                            ticks: { display: false, min: 0, max: 10 }
+                        }
+                    },
+                    plugins: {
+                        legend: { position: 'bottom', labels: { color: '#E6F1FF' } },
+                        tooltip: { callbacks: commonTooltipCallback }
+                    }
+                }
+            });
+
+            const doughnutCtx = document.getElementById('agentDoughnut').getContext('2d');
+            new Chart(doughnutCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Observe (Read-only)', 'Suggest (Draft mutations)', 'Apply Local (UI state)', 'Execute External (IO/DB)'],
+                    datasets: [{
+                        data: [40, 30, 20, 10],
+                        backgroundColor: [
+                            '#00D8FF',
+                            '#FF007F',
+                            '#B000FF',
+                            '#EF4444' 
+                        ],
+                        borderWidth: 0,
+                        hoverOffset: 10
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '70%',
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: { callbacks: commonTooltipCallback }
+                    }
+                }
+            });
+        };
+
+        window.addEventListener('DOMContentLoaded', setupCharts);
+    </script>
+</body>
+</html>

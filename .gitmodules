@@ -1,3 +1,18 @@
 [submodule "grip-py"]
 	path = grip-py
 	url = git@github.com:owebeeone/grip-py.git
+[submodule "grip-core"]
+	path = grip-core
+	url = git@github.com:owebeeone/grip-core.git
+[submodule "grip-vue"]
+	path = grip-vue
+	url = git@github.com:owebeeone/grip-vue.git
+[submodule "grip-vue-demo"]
+	path = grip-vue-demo
+	url = git@github.com:owebeeone/grip-vue-demo.git
+[submodule "grip-react"]
+	path = grip-react
+	url = git@github.com:owebeeone/grip-react.git
+[submodule "grip-react-demo"]
+	path = grip-react-demo
+	url = git@github.com:owebeeone/grip-react-demo.git
