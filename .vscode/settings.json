@@ -1,0 +1,15 @@
+{
+    "python.analysis.extraPaths": [
+        "${workspaceFolder}/grip-py/src"
+    ],
+    "terminal.integrated.env.windows": {
+        "PYTHONPATH": "${workspaceFolder}${pathSeparator}grip-py${pathSeparator}src"
+    },
+    "terminal.integrated.env.linux": {
+        "PYTHONPATH": "${workspaceFolder}${pathSeparator}grip-py${pathSeparator}src"
+    },
+    "terminal.integrated.env.osx": {
+        "PYTHONPATH": "${workspaceFolder}${pathSeparator}grip-py${pathSeparator}src"
+    },
+    "python.envFile": "${workspaceFolder}/.vscode/.env"
+}

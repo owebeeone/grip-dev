@@ -1,0 +1,3 @@
+[submodule "grip-py"]
+	path = grip-py
+	url = git@github.com:owebeeone/grip-py.git
