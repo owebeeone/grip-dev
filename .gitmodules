@@ -16,3 +16,6 @@
 [submodule "grip-react-demo"]
 	path = grip-react-demo
 	url = git@github.com:owebeeone/grip-react-demo.git
+[submodule "grip-py-demo"]
+	path = grip-py-demo
+	url = git@github.com:owebeeone/grip-py-demo.git

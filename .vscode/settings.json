@@ -1,17 +1,17 @@
 {
     "python.analysis.extraPaths": [
-        "${workspaceFolder}/grip-py/src"
+        "${workspaceFolder}/grip-py/src",
+        "${workspaceFolder}/grip-py-demo/src"
     ],
     "terminal.integrated.env.windows": {
-        "PYTHONPATH": "${workspaceFolder}${pathSeparator}grip-py${pathSeparator}src"
+        "PYTHONPATH": "${workspaceFolder}${pathSeparator}grip-py${pathSeparator}src;${workspaceFolder}${pathSeparator}grip-py-demo${pathSeparator}src;${env:PYTHONPATH}"
     },
     "terminal.integrated.env.linux": {
-        "PYTHONPATH": "${workspaceFolder}${pathSeparator}grip-py${pathSeparator}src"
+        "PYTHONPATH": "${workspaceFolder}${pathSeparator}grip-py${pathSeparator}src:${workspaceFolder}${pathSeparator}grip-py-demo${pathSeparator}src;${env:PYTHONPATH}"
     },
     "terminal.integrated.env.osx": {
-        "PYTHONPATH": "${workspaceFolder}${pathSeparator}grip-py${pathSeparator}src"
+        "PYTHONPATH": "${workspaceFolder}${pathSeparator}grip-py${pathSeparator}src:${workspaceFolder}${pathSeparator}grip-py-demo${pathSeparator}src;${env:PYTHONPATH}"
     },
-    "python.envFile": "${workspaceFolder}/.vscode/.env",
     "cursorpyright.analysis.extraPaths": [
         "${workspaceFolder}/grip-py/src"
     ]

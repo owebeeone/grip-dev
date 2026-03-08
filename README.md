@@ -21,6 +21,7 @@ git submodule update --init --recursive
 ## Submodules
 
 - `grip-py` -> `git@github.com:owebeeone/grip-py.git`
+- `grip-py-demo` -> `git@github.com:owebeeone/grip-py-demo.git`
 
 ## Workspace Setup
 

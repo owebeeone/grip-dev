@@ -163,8 +163,8 @@ Required behavior:
 - loading
 - success
 - error
-- stale-while-revalidate (reserved for follow-on refinement)
-- stale-with-error (reserved for follow-on refinement)
+- stale-while-revalidate
+- stale-with-error
 
 State updates should be immutable snapshots so watchers can detect transitions cleanly.
 Controller API:
@@ -175,13 +175,19 @@ Controller API:
 - `abort()`
 
 ## 6. Query Matcher and Partial Overrides
-Implemented core matcher delta plumbing (`QueryEvaluator` + resolver `apply_producer_delta`):
+Implemented matcher plumbing:
+- `Query` + `QueryEvaluator` with binding lifecycle and attribution delta calculation
+- `TapMatcher` runtime for home-context input subscriptions and presentation-context delta application
+- resolver-side per-grip partial transfer (`apply_producer_delta`)
 - per-grip attribution deltas (`added`, `removed`) at a context
 - ability to transfer a subset of grips from one tap to another
 - preserving unaffected grips on existing taps
 - deterministic conflict resolution via evaluator score/tie-break
 
-Full query/matcher runtime orchestration remains a follow-on phase.
+Implemented factory support in delta flow:
+- `TapFactory` includes `provides`
+- delta keys can be factory objects
+- resolver can locate producer records by either factory key or instantiated tap
 
 ## 7. Test Specification (TDD)
 All implementation work follows red/green/refactor.
