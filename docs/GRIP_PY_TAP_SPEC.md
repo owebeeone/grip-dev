@@ -1,17 +1,17 @@
 # GRIP_PY_TAP_SPEC
 Date: 2026-03-08
-Status: Draft (spec-first, implementation to follow)
+Status: Implemented baseline (phase-tracked parity with `grip-core`)
 Scope: Tap model, Tap API, and Tap test/implementation plan for `grip-py`
 
 ## 1. Purpose
-Define a complete Tap model for `grip-py` before implementing additional Tap behavior.
+Define and track the Tap model for `grip-py` while maintaining implementation parity targets.
 
 This spec focuses on:
 - Base Tap destination handling (including destination parameters)
 - FunctionTap synchronous behavior with destination-aware inputs
 - AsyncTap optional features (concurrency, cancellation, cache TTL, in-flight retention)
-- Partial-output overlap and per-grip attribution semantics for future matcher integration
-- A strict TDD implementation plan
+- Partial-output overlap and per-grip attribution semantics for matcher integration
+- A strict TDD implementation process and acceptance artifacts
 
 ## 2. Alignment Target
 Primary behavioral target is `grip-core` in:
@@ -108,29 +108,33 @@ v1 required behavior:
 - destination parameter change recomputes only affected destination
 - home parameter change recomputes all active destinations
 
-Phase 2b extension:
+Phase 2b (implemented):
 - optional state grips and handle grip parity with `grip-core`
+- `compute(args)` receives `FunctionTapComputeArgs`
+- compatibility shim: legacy `compute(ctx)` style still works
+- `handle_grip` publishes a handle supporting `get_state(...)` and `set_state(...)`
 
 ## 5. AsyncTap Spec
 AsyncTap is destination-aware and request-key aware.
 A request key identifies in-flight/cached work for a destination parameter set.
 
-Fetcher contract (v1):
-- `fetcher(dest_params: Mapping[Grip[Any], Any]) -> Awaitable[dict[Grip[Any], Any]]`
-- Fetcher receives resolved destination parameter values only.
-- Fetcher does not receive destination context directly.
+Fetcher contract (implemented):
+- `fetcher(params: AsyncTapParams) -> Awaitable[dict[Grip[Any], Any]]`
+- `params.destination_params` provides resolved destination parameter values
+- `params.home_params` provides resolved home parameter values
+- fetcher does not receive context objects directly
 
 ## 5.1 AsyncTap Options (all optional)
-- `request_key_of(dest_params, get_state?) -> str | None`
+- `request_key_of(params: AsyncTapParams) -> str | None`
 - `latest_only: bool = True`
 - `deadline_ms: int | None = None`
 - `cache_ttl_ms: int = 0`
 - `refresh_before_expiry_ms: int = 0`
 - `cleanup_delay_ms: int = 1000`
 - `keep_stale_data_on_transition: bool = False`
-- `retry: RetryConfig | None = None` (phase 3b)
-- `state_grip: Grip[AsyncRequestState] | None = None` (phase 3b)
-- `controller_grip: Grip[AsyncTapController] | None = None` (phase 3b)
+- `retry: RetryConfig | None = None` (implemented)
+- `state_grip: Grip[AsyncRequestState] | None = None` (implemented)
+- `controller_grip: Grip[AsyncTapController] | None = None` (implemented)
 
 ## 5.2 Concurrency Model
 Must support multiple concurrent request keys.
@@ -142,9 +146,10 @@ Required behavior:
 - when no destinations remain for key after delay, key state is cleaned
 
 ## 5.3 Cancellation / In-flight Retention
-- if `latest_only=True`, older in-flight work for same destination/key should be cancelable or ignorable on completion
-- retained in-flight requests may continue briefly to allow fast remount/rebind
-- stale completion must not overwrite newer accepted result
+- if `latest_only=True`, a destination joining an existing in-flight request for the same key reuses it
+- if `latest_only=False`, a new request for an already in-flight key cancels the prior in-flight key task
+- detached keys retain in-flight/cache/retry state until `cleanup_delay_ms` elapses
+- stale completion is ignored when destination key mapping has changed
 
 ## 5.4 Cache Semantics
 - cache key = request key
@@ -158,19 +163,25 @@ Required behavior:
 - loading
 - success
 - error
-- stale-while-revalidate
-- stale-with-error
+- stale-while-revalidate (reserved for follow-on refinement)
+- stale-with-error (reserved for follow-on refinement)
 
 State updates should be immutable snapshots so watchers can detect transitions cleanly.
+Controller API:
+- `retry(force_refetch: bool = False)`
+- `refresh(force_refetch: bool = False)`
+- `reset()`
+- `cancel_retry()`
+- `abort()`
 
 ## 6. Query Matcher and Partial Overrides
-The future matcher flow (`TapMatcher` + `QueryEvaluator`) requires:
+Implemented core matcher delta plumbing (`QueryEvaluator` + resolver `apply_producer_delta`):
 - per-grip attribution deltas (`added`, `removed`) at a context
 - ability to transfer a subset of grips from one tap to another
 - preserving unaffected grips on existing taps
 - deterministic conflict resolution via evaluator score/tie-break
 
-This is mandatory for dynamic tap activation use cases.
+Full query/matcher runtime orchestration remains a follow-on phase.
 
 ## 7. Test Specification (TDD)
 All implementation work follows red/green/refactor.
@@ -239,7 +250,7 @@ Exit criteria:
 - add optional state grips and handle grip behavior
 
 Exit criteria:
-- state/handle tests green
+- state/handle tests green (completed)
 
 ## Phase 3a: AsyncTap Core
 - implement request-key concurrency model
@@ -256,22 +267,23 @@ Exit criteria:
 - add retry policy behavior
 
 Exit criteria:
-- async advanced/state tests green
+- async advanced/state tests green (completed)
 
 ## Phase 4: Matcher Delta Integration
 - implement matcher/evaluator integration path in `grip-py`
 - ensure partial-grip transfer semantics match expected parity
 
 Exit criteria:
-- matcher integration tests green
+- matcher delta + resolver integration tests green (completed for core attribution path)
 
 ## Phase 5: Hardening
 - run full suite and targeted stress tests
 - document performance characteristics and defaults
 
 Exit criteria:
-- all tests green
-- docs updated with final API examples
+- all tests green (completed)
+- docs updated with final API examples (completed)
+- async perf smoke harness in `grip-py/tests/core/test_async_tap_perf.py` (completed)
 
 ## 9. Defaults Chosen in This Spec
 - static same-context overlap winner: latest producer assignment per grip
