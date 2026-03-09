@@ -1,13 +1,40 @@
 import os
 import subprocess
-import tomli
 from pathlib import Path
 from typing import Set, Dict
 import sys
 import argparse
-from packaging.specifiers import SpecifierSet
-from packaging.requirements import Requirement
 from collections import defaultdict
+
+try:
+    import tomllib as tomli
+except ModuleNotFoundError:  # pragma: no cover - Python < 3.11 fallback
+    try:
+        import tomli
+    except ModuleNotFoundError:
+        if os.environ.get("_COLLECT_DEPS_UV_BOOTSTRAPPED") != "1":
+            env = dict(os.environ)
+            env["_COLLECT_DEPS_UV_BOOTSTRAPPED"] = "1"
+            subprocess.check_call(
+                ["uv", "run", "--with", "packaging", "--with", "tomli", "python", __file__, *sys.argv[1:]],
+                env=env,
+            )
+            raise SystemExit(0)
+        raise
+
+try:
+    from packaging.specifiers import SpecifierSet
+    from packaging.requirements import Requirement
+except ModuleNotFoundError:  # pragma: no cover - bootstrap under uv if base interpreter lacks packaging
+    if os.environ.get("_COLLECT_DEPS_UV_BOOTSTRAPPED") != "1":
+        env = dict(os.environ)
+        env["_COLLECT_DEPS_UV_BOOTSTRAPPED"] = "1"
+        subprocess.check_call(
+            ["uv", "run", "--with", "packaging", "python", __file__, *sys.argv[1:]],
+            env=env,
+        )
+        raise SystemExit(0)
+    raise
 
 
 def find_local_packages(workspace_dir: Path) -> Set[str]:

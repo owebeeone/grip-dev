@@ -14,5 +14,6 @@
     },
     "cursorpyright.analysis.extraPaths": [
         "${workspaceFolder}/grip-py/src"
-    ]
+    ],
+    "python.envFile": "${workspaceFolder}/.vscode/.env"
 }

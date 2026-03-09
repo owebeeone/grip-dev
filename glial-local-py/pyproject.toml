@@ -1,0 +1,22 @@
+[build-system]
+requires = [
+    "hatchling",
+]
+build-backend = "hatchling.build"
+
+[project]
+name = "glial-local-py"
+version = "0.1.0"
+description = "Canonical local-first Glial session model for Python runtimes."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [
+    { name = "Gianni Mariani", email = "gianni@mariani.ws" },
+]
+dependencies = []
+
+[tool.hatch.build.targets.wheel]
+packages = [
+    "src/glial_local",
+]
