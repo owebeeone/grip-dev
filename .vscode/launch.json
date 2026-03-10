@@ -79,6 +79,18 @@
             "env": {
                 "PYTHONPATH": "${workspaceFolder}${pathSeparator}glial-local-py${pathSeparator}src;${workspaceFolder}${pathSeparator}glial-net-py${pathSeparator}src;${workspaceFolder}${pathSeparator}glial-router-py${pathSeparator}src;${workspaceFolder}${pathSeparator}grip-py${pathSeparator}src;${workspaceFolder}${pathSeparator}grip-py-demo${pathSeparator}src;${env:PYTHONPATH}"
             }
+        },
+        {
+            "name": "Grip: Current File",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "cwd": "${fileDirname}",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}${pathSeparator}glial-control-py${pathSeparator}src;${workspaceFolder}${pathSeparator}glial-local-py${pathSeparator}src;${workspaceFolder}${pathSeparator}glial-net-py${pathSeparator}src;${workspaceFolder}${pathSeparator}glial-router-py${pathSeparator}src;${workspaceFolder}${pathSeparator}grip-py${pathSeparator}src;${workspaceFolder}${pathSeparator}grip-py-demo${pathSeparator}src;${env:PYTHONPATH}"
+            }
         }
     ]
 }

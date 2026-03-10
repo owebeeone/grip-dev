@@ -12,12 +12,17 @@ from .live_hub import SessionLiveHub
 from .models import (
     AttachSessionRequest,
     AttachSessionResponse,
+    LeaseRequest,
+    LeaseResponse,
     ReplayResponse,
     RemoteSessionLoadResponse,
     RemoteSessionSummaryModel,
+    SharedSessionLoadResponse,
+    SharedValueUpdateRequest,
     SubmitChangeRequest,
     SubmitChangeResponse,
     UpsertRemoteSessionRequest,
+    UpsertSharedSessionRequest,
     WebSocketAcceptedChangeEvent,
     WebSocketAttachRequest,
     WebSocketAttachedEvent,
@@ -32,9 +37,17 @@ def _default_react_demo_dist() -> Path | None:
     return None
 
 
+def _default_viewer_dist() -> Path | None:
+    candidate = Path(__file__).resolve().parents[3] / "glial-viewer-ts" / "dist"
+    if candidate.exists():
+        return candidate
+    return None
+
+
 def create_app(
     coordinator: InMemoryGlialCoordinator | None = None,
     react_demo_dist: str | Path | None = None,
+    viewer_dist: str | Path | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Glial Router")
     app.state.glial_coordinator = coordinator or InMemoryGlialCoordinator()
@@ -42,6 +55,7 @@ def create_app(
     app.state.react_demo_dist = (
         Path(react_demo_dist) if react_demo_dist is not None else _default_react_demo_dist()
     )
+    app.state.viewer_dist = Path(viewer_dist) if viewer_dist is not None else _default_viewer_dist()
 
     @app.get("/", include_in_schema=False)
     def root_redirect():
@@ -62,6 +76,21 @@ def create_app(
         index_path = dist_path / "index.html"
         if not index_path.exists():
             raise HTTPException(status_code=404, detail="react demo bundle is not available")
+        return FileResponse(index_path)
+
+    @app.get("/viewer", include_in_schema=False)
+    @app.get("/viewer/{asset_path:path}", include_in_schema=False)
+    def react_viewer(asset_path: str = ""):
+        dist_path: Path | None = app.state.viewer_dist
+        if dist_path is None or not dist_path.exists():
+            raise HTTPException(status_code=404, detail="react viewer bundle is not available")
+        if asset_path:
+            requested = (dist_path / asset_path).resolve()
+            if requested.is_file() and dist_path in requested.parents:
+                return FileResponse(requested)
+        index_path = dist_path / "index.html"
+        if not index_path.exists():
+            raise HTTPException(status_code=404, detail="react viewer bundle is not available")
         return FileResponse(index_path)
 
     @app.post("/sessions/{session_id}/attach", response_model=AttachSessionResponse)
@@ -124,6 +153,110 @@ def create_app(
                 status_code=404,
                 detail=f"unknown remote session: {user_id}:{session_id}",
             )
+
+    @app.get("/shared-sessions/{session_id}", response_model=SharedSessionLoadResponse)
+    def get_shared_session(session_id: str, user_id: str) -> SharedSessionLoadResponse:
+        try:
+            return app.state.glial_coordinator.get_shared_session(user_id, session_id)
+        except KeyError as exc:
+            raise HTTPException(
+                status_code=404,
+                detail=f"unknown shared session: {user_id}:{session_id}",
+            ) from exc
+
+    @app.put("/shared-sessions/{session_id}", response_model=SharedSessionLoadResponse)
+    def put_shared_session(
+        session_id: str,
+        user_id: str,
+        request: UpsertSharedSessionRequest,
+    ) -> SharedSessionLoadResponse:
+        return app.state.glial_coordinator.save_shared_session(
+            user_id,
+            session_id,
+            snapshot=request.snapshot,
+            title=request.title,
+        )
+
+    @app.get("/shared-sessions/{session_id}/contexts")
+    def get_shared_contexts(session_id: str, user_id: str) -> dict:
+        try:
+            shared = app.state.glial_coordinator.get_shared_session(user_id, session_id)
+        except KeyError as exc:
+            raise HTTPException(
+                status_code=404,
+                detail=f"unknown shared session: {user_id}:{session_id}",
+            ) from exc
+        return shared.snapshot.get("contexts", {})
+
+    @app.get("/shared-sessions/{session_id}/taps")
+    def get_shared_taps(session_id: str, user_id: str) -> dict:
+        try:
+            shared = app.state.glial_coordinator.get_shared_session(user_id, session_id)
+        except KeyError as exc:
+            raise HTTPException(
+                status_code=404,
+                detail=f"unknown shared session: {user_id}:{session_id}",
+            ) from exc
+        return shared.snapshot.get("taps", {})
+
+    @app.get("/shared-sessions/{session_id}/leases")
+    def get_shared_leases(session_id: str, user_id: str) -> dict:
+        try:
+            shared = app.state.glial_coordinator.get_shared_session(user_id, session_id)
+        except KeyError as exc:
+            raise HTTPException(
+                status_code=404,
+                detail=f"unknown shared session: {user_id}:{session_id}",
+            ) from exc
+        return shared.leases
+
+    @app.post("/shared-sessions/{session_id}/leases/{tap_id}", response_model=LeaseResponse)
+    def request_shared_lease(
+        session_id: str,
+        tap_id: str,
+        user_id: str,
+        request: LeaseRequest,
+    ) -> LeaseResponse:
+        return app.state.glial_coordinator.request_tap_lease(
+            user_id,
+            session_id,
+            tap_id,
+            replica_id=request.replica_id,
+            priority=request.priority,
+        )
+
+    @app.delete("/shared-sessions/{session_id}/leases/{tap_id}", status_code=204)
+    def release_shared_lease(
+        session_id: str,
+        tap_id: str,
+        user_id: str,
+        replica_id: str | None = None,
+    ) -> None:
+        deleted = app.state.glial_coordinator.release_tap_lease(
+            user_id,
+            session_id,
+            tap_id,
+            replica_id=replica_id,
+        )
+        if not deleted:
+            raise HTTPException(
+                status_code=404,
+                detail=f"unknown shared lease: {user_id}:{session_id}:{tap_id}",
+            )
+
+    @app.post("/shared-sessions/{session_id}/values", response_model=SharedSessionLoadResponse)
+    def update_shared_value(
+        session_id: str,
+        user_id: str,
+        request: SharedValueUpdateRequest,
+    ) -> SharedSessionLoadResponse:
+        return app.state.glial_coordinator.update_shared_value(
+            user_id,
+            session_id,
+            path=request.path,
+            grip_id=request.grip_id,
+            value=request.value,
+        )
 
     @app.websocket("/sessions/{session_id}/ws")
     async def session_websocket(session_id: str, websocket: WebSocket) -> None:

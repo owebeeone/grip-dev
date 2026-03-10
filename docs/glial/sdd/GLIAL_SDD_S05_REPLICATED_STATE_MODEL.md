@@ -289,6 +289,39 @@ Forbidden synchronized values:
 - class instances with runtime behavior
 - subscriptions
 
+## Generic Shared Viewer And Control Clients
+
+Not every Glial-connected runtime will have the application's typed grip registry.
+
+Examples:
+
+- a Python control or headless AI client
+- a generic web viewer
+- a debugging bridge between two Glial sessions
+
+Rules:
+
+- the shared projection must be consumable by canonical string identities alone:
+  - `context path`
+  - `grip_id`
+  - `tap_id`
+- generic viewer or control clients must be able to materialize unknown grips dynamically from shared projection metadata
+- those dynamically materialized grips carry raw JSON-compatible values plus metadata, not application-specific executable semantics
+- commands and mutations from generic clients target canonical IDs and JSON-compatible values, not local typed grip handles
+
+### Grip Mismatch Handling
+
+When a runtime has a local grip definition for a canonical `grip_id`, it may bind that typed grip only if the shared value encoding is compatible with the local grip's persistence codec expectations.
+
+If there is no local grip definition, or if the local type and shared value are not safely compatible:
+
+- the runtime must keep the value in a generic raw shared grip
+- the runtime must not silently coerce the value
+- the runtime should surface a mismatch diagnostic in debug or viewer tooling
+- the shared value remains inspectable and, if policy allows, editable as raw JSON
+
+This rule prevents cross-runtime type drift from corrupting shared state while still allowing generic inspection and control tooling to function.
+
 ## Async Cache Rules
 
 Async tap cache persistence is optional and opt-in.

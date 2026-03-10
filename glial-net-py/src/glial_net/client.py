@@ -152,6 +152,106 @@ class HttpGlialClient:
         response.raise_for_status()
         return True
 
+    def load_shared_session(self, user_id: str, session_id: str) -> dict[str, Any]:
+        response = self._client.get(
+            f"/shared-sessions/{session_id}",
+            params={"user_id": user_id},
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def save_shared_session(
+        self,
+        user_id: str,
+        session_id: str,
+        snapshot: dict[str, Any],
+        *,
+        title: str | None = None,
+    ) -> dict[str, Any]:
+        response = self._client.put(
+            f"/shared-sessions/{session_id}",
+            params={"user_id": user_id},
+            json={"title": title, "snapshot": _to_jsonable(snapshot)},
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def list_shared_contexts(self, user_id: str, session_id: str) -> dict[str, Any]:
+        response = self._client.get(
+            f"/shared-sessions/{session_id}/contexts",
+            params={"user_id": user_id},
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def list_shared_taps(self, user_id: str, session_id: str) -> dict[str, Any]:
+        response = self._client.get(
+            f"/shared-sessions/{session_id}/taps",
+            params={"user_id": user_id},
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def list_shared_leases(self, user_id: str, session_id: str) -> dict[str, Any]:
+        response = self._client.get(
+            f"/shared-sessions/{session_id}/leases",
+            params={"user_id": user_id},
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def request_tap_lease(
+        self,
+        user_id: str,
+        session_id: str,
+        tap_id: str,
+        *,
+        replica_id: str,
+        priority: int = 0,
+    ) -> dict[str, Any]:
+        response = self._client.post(
+            f"/shared-sessions/{session_id}/leases/{tap_id}",
+            params={"user_id": user_id},
+            json={"replica_id": replica_id, "priority": priority},
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def release_tap_lease(
+        self,
+        user_id: str,
+        session_id: str,
+        tap_id: str,
+        *,
+        replica_id: str | None = None,
+    ) -> bool:
+        params: dict[str, Any] = {"user_id": user_id}
+        if replica_id is not None:
+            params["replica_id"] = replica_id
+        response = self._client.delete(
+            f"/shared-sessions/{session_id}/leases/{tap_id}",
+            params=params,
+        )
+        response.raise_for_status()
+        return True
+
+    def update_shared_value(
+        self,
+        user_id: str,
+        session_id: str,
+        *,
+        path: str,
+        grip_id: str,
+        value: Any,
+    ) -> dict[str, Any]:
+        response = self._client.post(
+            f"/shared-sessions/{session_id}/values",
+            params={"user_id": user_id},
+            json={"path": path, "grip_id": grip_id, "value": _to_jsonable(value)},
+        )
+        response.raise_for_status()
+        return response.json()
+
 
 class HttpGripSessionLink(GripSessionLink):
     """`GripSessionLink` implementation backed by the Glial HTTP client."""

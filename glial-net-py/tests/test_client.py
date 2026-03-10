@@ -126,3 +126,50 @@ def test_http_glial_client_manages_remote_sessions_against_fastapi_router() -> N
     assert deleted is True
 
     assert client.list_remote_sessions("user-a") == []
+
+
+def test_http_glial_client_manages_shared_sessions_against_fastapi_router() -> None:
+    test_client = TestClient(create_app())
+    client = HttpGlialClient(client=test_client)
+
+    saved = client.save_shared_session(
+        "user-a",
+        "shared-a",
+        {
+            "session_id": "shared-a",
+            "contexts": {
+                "main-home": {
+                    "path": "main-home",
+                    "name": "main-home",
+                    "children": [],
+                    "drips": {},
+                }
+            },
+            "taps": {},
+        },
+        title="Shared A",
+    )
+    assert saved["session_id"] == "shared-a"
+
+    loaded = client.load_shared_session("user-a", "shared-a")
+    assert loaded["snapshot"]["session_id"] == "shared-a"
+
+    lease = client.request_tap_lease(
+        "user-a",
+        "shared-a",
+        "tap-a",
+        replica_id="headless-a",
+        priority=10,
+    )
+    assert lease["primary_replica_id"] == "headless-a"
+
+    updated = client.update_shared_value(
+        "user-a",
+        "shared-a",
+        path="main-home",
+        grip_id="app:Count",
+        value=5,
+    )
+    assert updated["snapshot"]["contexts"]["main-home"]["drips"]["app:Count"]["value"] == 5
+
+    assert client.release_tap_lease("user-a", "shared-a", "tap-a", replica_id="headless-a") is True

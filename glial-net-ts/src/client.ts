@@ -35,6 +35,22 @@ export interface RemoteSessionLoadResponse {
   last_modified_ms: number;
 }
 
+export interface SharedSessionLoadResponse {
+  session_id: string;
+  title?: string;
+  snapshot: Record<string, unknown>;
+  leases: Record<string, Record<string, unknown>>;
+  last_modified_ms: number;
+}
+
+export interface LeaseResponse {
+  tap_id: string;
+  primary_replica_id: string;
+  priority: number;
+  granted_ms: number;
+  granted: boolean;
+}
+
 export interface HttpGlialClientOptions {
   baseUrl: string;
   fetchImpl?: typeof fetch;
@@ -145,6 +161,94 @@ export class HttpGlialClient {
     url.searchParams.set("user_id", userId);
     return requestNoContent(this.fetchImpl, url.toString(), {
       method: "DELETE",
+    });
+  }
+
+  async loadSharedSession(userId: string, sessionId: string): Promise<SharedSessionLoadResponse> {
+    const url = new URL(`${this.baseUrl}/shared-sessions/${sessionId}`);
+    url.searchParams.set("user_id", userId);
+    return requestJson<SharedSessionLoadResponse>(this.fetchImpl, url.toString());
+  }
+
+  async saveSharedSession(
+    userId: string,
+    sessionId: string,
+    snapshot: Record<string, unknown>,
+    title?: string,
+  ): Promise<SharedSessionLoadResponse> {
+    const url = new URL(`${this.baseUrl}/shared-sessions/${sessionId}`);
+    url.searchParams.set("user_id", userId);
+    return requestJson<SharedSessionLoadResponse>(this.fetchImpl, url.toString(), {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: title ?? null, snapshot }),
+    });
+  }
+
+  async listSharedContexts(
+    userId: string,
+    sessionId: string,
+  ): Promise<Record<string, unknown>> {
+    const url = new URL(`${this.baseUrl}/shared-sessions/${sessionId}/contexts`);
+    url.searchParams.set("user_id", userId);
+    return requestJson<Record<string, unknown>>(this.fetchImpl, url.toString());
+  }
+
+  async listSharedTaps(userId: string, sessionId: string): Promise<Record<string, unknown>> {
+    const url = new URL(`${this.baseUrl}/shared-sessions/${sessionId}/taps`);
+    url.searchParams.set("user_id", userId);
+    return requestJson<Record<string, unknown>>(this.fetchImpl, url.toString());
+  }
+
+  async listSharedLeases(userId: string, sessionId: string): Promise<Record<string, unknown>> {
+    const url = new URL(`${this.baseUrl}/shared-sessions/${sessionId}/leases`);
+    url.searchParams.set("user_id", userId);
+    return requestJson<Record<string, unknown>>(this.fetchImpl, url.toString());
+  }
+
+  async requestTapLease(
+    userId: string,
+    sessionId: string,
+    tapId: string,
+    replicaId: string,
+    priority = 0,
+  ): Promise<LeaseResponse> {
+    const url = new URL(`${this.baseUrl}/shared-sessions/${sessionId}/leases/${tapId}`);
+    url.searchParams.set("user_id", userId);
+    return requestJson<LeaseResponse>(this.fetchImpl, url.toString(), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ replica_id: replicaId, priority }),
+    });
+  }
+
+  async releaseTapLease(
+    userId: string,
+    sessionId: string,
+    tapId: string,
+    replicaId?: string,
+  ): Promise<void> {
+    const url = new URL(`${this.baseUrl}/shared-sessions/${sessionId}/leases/${tapId}`);
+    url.searchParams.set("user_id", userId);
+    if (replicaId) {
+      url.searchParams.set("replica_id", replicaId);
+    }
+    return requestNoContent(this.fetchImpl, url.toString(), {
+      method: "DELETE",
+    });
+  }
+
+  async updateSharedValue(
+    userId: string,
+    sessionId: string,
+    input: { path: string; grip_id: string; value: unknown },
+  ): Promise<SharedSessionLoadResponse> {
+    const url = new URL(`${this.baseUrl}/shared-sessions/${sessionId}/values`);
+    url.searchParams.set("user_id", userId);
+    return requestJson<SharedSessionLoadResponse>(this.fetchImpl, url.toString(), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input),
     });
   }
 }

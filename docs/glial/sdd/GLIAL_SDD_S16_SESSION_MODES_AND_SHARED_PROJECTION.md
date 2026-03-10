@@ -144,6 +144,57 @@ This metadata is what lets an AI understand:
 - whether it is primary or follower
 - whether it is safe to request takeover
 
+## Generic Viewer And Control Tool Rules
+
+Generic shared-session tools are distinct from the application runtimes.
+
+Examples:
+
+- a command-driven Python control client
+- a generic React viewer that inspects a routed session without application-specific UI code
+- debugging or bridge tools
+
+These tools must not rely on the application's static typed grip registry.
+
+Instead they should:
+
+1. hydrate the shared projection into a raw shared-session Grok using canonical IDs
+2. create generic shared grips dynamically for unknown `grip_id` values
+3. materialize passive taps and current shared values from the routed session
+4. optionally map that raw shared-session Grok into a second viewer-specific Grok with stable viewer grips for UI rendering
+
+This produces a clean separation:
+
+- the shared-session Grok mirrors the routed shared projection faithfully
+- the viewer Grok presents stable UI-oriented state derived from that mirrored graph
+
+### Dynamic Grip Materialization
+
+For generic tools:
+
+- unknown `grip_id` values are materialized as generic JSON-value grips
+- known grip IDs may optionally bind to local typed grip definitions when compatible
+- mismatches fall back to raw generic grips and are surfaced diagnostically
+
+### Control Operations
+
+Generic control tools operate on:
+
+- `glial_session_id`
+- context paths
+- canonical `grip_id`
+- canonical `tap_id`
+
+Control operations include:
+
+- list or load sessions
+- inspect contexts, drips, and taps
+- request or release negotiated primary ownership
+- set or replace shared drip values where policy allows
+- observe lease and ownership state
+
+These operations do not require the full application UI runtime.
+
 ## AI Takeover Model
 
 An AI or tool-driven replica may request negotiated primary ownership for a tap.

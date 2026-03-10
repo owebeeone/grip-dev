@@ -64,8 +64,9 @@ class VSCodeConfigUpdater:
 
         workspace_str = self.workspace_folder
         os_sep = os.path.sep
-        pythonpath = ";".join(f"${{WORKSPACE_FOLDER}}{os_sep}{p}" for p in self.python_paths)
-        ppsuffix = ";${PYTHONPATH}" if add_pythonpath else ""
+        path_sep = ":" if os.sep == "/" else ";"
+        pythonpath = path_sep.join(f"${{WORKSPACE_FOLDER}}{os_sep}{p}" for p in self.python_paths)
+        ppsuffix = f"{path_sep}${{PYTHONPATH}}" if add_pythonpath else ""
 
         env_content = (
             f"WORKSPACE_FOLDER={workspace_str}\n"

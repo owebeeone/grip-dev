@@ -27,3 +27,4 @@ These are not blocking architecture issues:
 This is not a blocker for the Glial SDD, but it should be designed explicitly during planning:
 
 - concrete `GripSessionPersistence` implementations for IndexedDB, filesystem, and Glial-linked modes
+- generic shared-tool grip materialization and mismatch diagnostics for viewer or control clients

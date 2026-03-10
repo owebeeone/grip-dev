@@ -67,9 +67,41 @@ class RemoteSessionLoadResponse(BaseModel):
     last_modified_ms: int
 
 
+class SharedSessionLoadResponse(BaseModel):
+    session_id: str
+    title: str | None = None
+    snapshot: dict[str, Any]
+    leases: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    last_modified_ms: int
+
+
 class UpsertRemoteSessionRequest(BaseModel):
     title: str | None = None
     snapshot: dict[str, Any]
+
+
+class UpsertSharedSessionRequest(BaseModel):
+    title: str | None = None
+    snapshot: dict[str, Any]
+
+
+class LeaseRequest(BaseModel):
+    replica_id: str
+    priority: int = 0
+
+
+class LeaseResponse(BaseModel):
+    tap_id: str
+    primary_replica_id: str
+    priority: int
+    granted_ms: int
+    granted: bool = True
+
+
+class SharedValueUpdateRequest(BaseModel):
+    path: str
+    grip_id: str
+    value: Any
 
 
 class WebSocketAttachRequest(BaseModel):

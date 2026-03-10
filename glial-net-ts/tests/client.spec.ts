@@ -176,4 +176,69 @@ describe("HttpGlialClient", () => {
       "Glial request failed: 404",
     );
   });
+
+  it("loads shared sessions, requests leases, and updates shared values via fetch", async () => {
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({
+        session_id: 'shared-a',
+        title: 'Shared A',
+        snapshot: { session_id: 'shared-a', contexts: {}, taps: {} },
+        leases: {},
+        last_modified_ms: 1,
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        tap_id: 'tap-a',
+        primary_replica_id: 'headless-a',
+        priority: 50,
+        granted_ms: 2,
+        granted: true,
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        session_id: 'shared-a',
+        title: 'Shared A',
+        snapshot: {
+          session_id: 'shared-a',
+          contexts: {
+            'main-home': {
+              path: 'main-home',
+              name: 'main-home',
+              children: [],
+              drips: {
+                'app:Count': {
+                  grip_id: 'app:Count',
+                  name: 'Count',
+                  value: 7,
+                  taps: [],
+                },
+              },
+            },
+          },
+          taps: {},
+        },
+        leases: {},
+        last_modified_ms: 3,
+      }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+
+    const client = new HttpGlialClient({
+      baseUrl: 'http://glial.test',
+      fetchImpl: fetchMock,
+    });
+
+    const shared = await client.loadSharedSession('user-a', 'shared-a');
+    expect(shared.session_id).toBe('shared-a');
+
+    const lease = await client.requestTapLease('user-a', 'shared-a', 'tap-a', 'headless-a', 50);
+    expect(lease.primary_replica_id).toBe('headless-a');
+
+    const updated = await client.updateSharedValue('user-a', 'shared-a', {
+      path: 'main-home',
+      grip_id: 'app:Count',
+      value: 7,
+    });
+    expect((updated.snapshot.contexts as Record<string, { drips: Record<string, { value: number }> }>)['main-home'].drips['app:Count'].value).toBe(7);
+
+    await expect(client.releaseTapLease('user-a', 'shared-a', 'tap-a', 'headless-a')).resolves.toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
 });

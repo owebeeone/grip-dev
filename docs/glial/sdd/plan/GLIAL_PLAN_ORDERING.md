@@ -9,6 +9,7 @@ The recommended implementation order is:
 3. Phase 03: local durable stores
 4. Phase 04: Glial server coordination
 5. Phase 05: Glial client link and reconciliation
+6. Phase 06: shared control and viewer tools
 
 ## Why This Order
 
@@ -52,6 +53,15 @@ Phase 05 depends on a working Glial server core for:
 - authoritative clocks
 - snapshot and replay
 - lease ownership
+
+### Phase 05 -> Phase 06
+
+Phase 06 depends on a working routed-session baseline for:
+
+- remote session catalog and load
+- inbound shared-state application
+- passive tap materialization
+- primary negotiation messages and server authority
 
 ## Parallelism Guidance
 

@@ -1,5 +1,6 @@
 {
     "python.analysis.extraPaths": [
+        "${workspaceFolder}/glial-control-py/src",
         "${workspaceFolder}/glial-local-py/src",
         "${workspaceFolder}/glial-net-py/src",
         "${workspaceFolder}/glial-router-py/src",
@@ -7,13 +8,13 @@
         "${workspaceFolder}/grip-py-demo/src"
     ],
     "terminal.integrated.env.windows": {
-        "PYTHONPATH": "${workspaceFolder}${pathSeparator}glial-local-py${pathSeparator}src;${workspaceFolder}${pathSeparator}glial-net-py${pathSeparator}src;${workspaceFolder}${pathSeparator}glial-router-py${pathSeparator}src;${workspaceFolder}${pathSeparator}grip-py${pathSeparator}src;${workspaceFolder}${pathSeparator}grip-py-demo${pathSeparator}src;${env:PYTHONPATH}"
+        "PYTHONPATH": "${workspaceFolder}${pathSeparator}glial-control-py${pathSeparator}src;${workspaceFolder}${pathSeparator}glial-local-py${pathSeparator}src;${workspaceFolder}${pathSeparator}glial-net-py${pathSeparator}src;${workspaceFolder}${pathSeparator}glial-router-py${pathSeparator}src;${workspaceFolder}${pathSeparator}grip-py${pathSeparator}src;${workspaceFolder}${pathSeparator}grip-py-demo${pathSeparator}src;${env:PYTHONPATH}"
     },
     "terminal.integrated.env.linux": {
-        "PYTHONPATH": "${workspaceFolder}${pathSeparator}glial-local-py${pathSeparator}src:${workspaceFolder}${pathSeparator}glial-net-py${pathSeparator}src:${workspaceFolder}${pathSeparator}glial-router-py${pathSeparator}src:${workspaceFolder}${pathSeparator}grip-py${pathSeparator}src:${workspaceFolder}${pathSeparator}grip-py-demo${pathSeparator}src;${env:PYTHONPATH}"
+        "PYTHONPATH": "${workspaceFolder}${pathSeparator}glial-control-py${pathSeparator}src:${workspaceFolder}${pathSeparator}glial-local-py${pathSeparator}src:${workspaceFolder}${pathSeparator}glial-net-py${pathSeparator}src:${workspaceFolder}${pathSeparator}glial-router-py${pathSeparator}src:${workspaceFolder}${pathSeparator}grip-py${pathSeparator}src:${workspaceFolder}${pathSeparator}grip-py-demo${pathSeparator}src;${env:PYTHONPATH}"
     },
     "terminal.integrated.env.osx": {
-        "PYTHONPATH": "${workspaceFolder}${pathSeparator}glial-local-py${pathSeparator}src:${workspaceFolder}${pathSeparator}glial-net-py${pathSeparator}src:${workspaceFolder}${pathSeparator}glial-router-py${pathSeparator}src:${workspaceFolder}${pathSeparator}grip-py${pathSeparator}src:${workspaceFolder}${pathSeparator}grip-py-demo${pathSeparator}src;${env:PYTHONPATH}"
+        "PYTHONPATH": "${workspaceFolder}${pathSeparator}glial-control-py${pathSeparator}src:${workspaceFolder}${pathSeparator}glial-local-py${pathSeparator}src:${workspaceFolder}${pathSeparator}glial-net-py${pathSeparator}src:${workspaceFolder}${pathSeparator}glial-router-py${pathSeparator}src:${workspaceFolder}${pathSeparator}grip-py${pathSeparator}src:${workspaceFolder}${pathSeparator}grip-py-demo${pathSeparator}src;${env:PYTHONPATH}"
     },
     "cursorpyright.analysis.extraPaths": [
         "${workspaceFolder}/grip-py/src"

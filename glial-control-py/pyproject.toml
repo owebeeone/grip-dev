@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "glial-control-py"
+version = "0.1.0"
+description = "Command-driven control client for Glial shared sessions"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "glial-net-py",
+]
+
+[project.scripts]
+glial-control = "glial_control.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

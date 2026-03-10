@@ -9,6 +9,8 @@ It assumes the current codebase already has:
 - source-state local persistence for headed runtimes
 - atom tap export and restore hooks
 - browser-local reload restore in the demo
+- remote session catalog and backup storage on the router
+- routed demo session sync built on source-state snapshots
 
 The remaining work is to align the code with the revised SDD model:
 
@@ -122,25 +124,25 @@ These are new capabilities required by the revised SDD:
 
 ### `/Users/owebeeone/limbo/grip-dev/grip-py/src/grip_py/core/local_persistence.py`
 
-- refactor current implementation so it is explicitly the source-state backup projector path
-- add shared-state projection builder
-- add shared-state projection apply path
-- keep current headed restore semantics for source-state backup
-- ensure headless hydrate uses passive taps and shared outputs rather than rerunning local app logic
+- completed: current implementation now serves as the source-state backup projector path
+- completed: shared-state projection builder exists
+- completed: shared-state projection apply path exists
+- completed: current headed restore semantics remain the source-state backup path
+- completed: headless hydrate now uses passive taps and shared outputs instead of rerunning local app logic
 
 ### `/Users/owebeeone/limbo/grip-dev/grip-py/src/grip_py/core/grok_impl.py`
 
-- replace hard-coded local/shared attach assumptions with projector attachment APIs
-- keep source-state backup and shared projection as projector kinds rather than top-level special-case APIs
-- add tap materialization registry support
+- partial: local runtime behavior is still source-backup-oriented, but shared projection apply support exists
+- remaining: align fully on generic projector attachment APIs the way `grip-core` now does
+- completed: tap materialization registry support exists
 - add support for loading a logical `glial_session_id`
-- ensure shared-state apply bypasses the local dirty queue
+- completed: shared-state apply bypasses the local dirty queue
 
 ### `/Users/owebeeone/limbo/grip-dev/grip-py/src/grip_py/core/interfaces.py`
 
-- add passive tap protocol support
-- add tap materialization registry protocol
-- add explicit split between source-state restore hooks and shared-state materialization metadata if needed
+- completed: passive tap protocol support exists
+- completed: tap materialization registry protocol exists
+- partial: source-state restore hooks and shared-state materialization metadata are distinguishable in practice, but the interface surface can still be cleaned up
 
 ### `/Users/owebeeone/limbo/grip-dev/grip-py/src/grip_py/core/atom_tap.py`
 
@@ -149,25 +151,24 @@ These are new capabilities required by the revised SDD:
 
 ### `/Users/owebeeone/limbo/grip-dev/grip-py/src/grip_py/core/function_tap.py`
 
-- add shared-state export metadata support
-- support passive materialization
+- completed: shared-state export metadata flows through generic tap export
+- completed: passive materialization is supported through shared projection hydrate
 - only add source-state backup hooks where the tap truly owns durable state
 
 ### `/Users/owebeeone/limbo/grip-dev/grip-py/src/grip_py/core/async_tap.py`
 
-- add shared-state export metadata support
+- completed: shared-state export metadata flows through generic tap export
 - keep async cache backup optional and explicit
-- support passive materialization
+- completed: passive materialization is supported through shared projection hydrate
 
 ### `/Users/owebeeone/limbo/grip-dev/grip-py/tests/core/test_local_persistence.py`
 
-- clarify that current tests are source-state backup tests
-- add separate shared projection hydrate tests
+- partial: current tests cover both source-state backup and shared projection hydrate, but could be split more explicitly by concern
 
 ### New test files under `/Users/owebeeone/limbo/grip-dev/grip-py/tests/core/`
 
-- add passive tap materialization tests
-- add headed restore versus headless hydrate distinction tests
+- completed: passive tap materialization is covered
+- remaining: add headed restore versus headless hydrate distinction tests
 - add matcher restore tests
 - add shared projection convergence tests
 
@@ -224,11 +225,12 @@ These are new capabilities required by the revised SDD:
 
 ### `/Users/owebeeone/limbo/grip-dev/glial-net-ts/src/client.ts`
 
-- remaining: switch client assumptions from source-state backup to shared-state projection for Glial live attach
+- partial: shared-session inspection, lease negotiation, and shared value update APIs now exist
+- remaining: move from poll-based shared-session refresh to a true live shared-projection projector
 - completed: remote session list/load/save client calls now exist
 - completed: remote session delete client call now exists
 - support browser session record update after remote load
-- support headed-to-headless and headed-to-headed follower hydration via passive taps
+- partial: headed-to-headless follower hydration exists through shared snapshot load, but not a live projector yet
 - keep pending-sync and confirmation logic for local mutations
 - implement the client as a `shared-projection` projector rather than a special-case attach API
 
@@ -242,9 +244,10 @@ These are new capabilities required by the revised SDD:
 
 ### `/Users/owebeeone/limbo/grip-dev/glial-net-py/src/glial_net/client.py`
 
-- remaining: switch client assumptions from source-state backup to shared-state projection for Glial live attach
+- partial: shared-session inspection, lease negotiation, and shared value update APIs now exist
+- remaining: move from poll-based shared-session refresh to a true live shared-projection projector
 - completed: remote session list/load/save/delete client calls now exist
-- support headless hydration using passive taps
+- partial: headless inspection and control work through shared session APIs, but passive-tap runtime attach is still a later slice
 - completed: support remote session load by authenticated user plus `glial_session_id`
 - support takeover requests for negotiated-primary taps
 - implement the client as a `shared-projection` projector rather than a special-case attach API
@@ -264,14 +267,17 @@ These are new capabilities required by the revised SDD:
 - completed: remote session delete endpoint exists
 - completed: websocket live session attach and accepted-change fanout endpoint exists
 - completed: built `grip-react-demo` bundle can be served from the router at `/demo/`
+- completed: built `glial-viewer-ts` bundle can be served from the router at `/viewer/`
 - add storage mode aware session creation or attach endpoints if needed
+- remaining: add shared-session websocket or server-push subscription if we want live projector semantics instead of polling
 
 ### `/Users/owebeeone/limbo/grip-dev/glial-router-py/src/glial_router/coordinator.py`
 
 - keep live shared-session coordination
 - completed: remote source-state backup integration exists in-memory
 - completed: remote source-state backup now uses a dedicated storage adapter interface
-- keep shared projection generation separate from backup snapshot storage
+- completed: shared projection storage is now separate from backup snapshot storage
+- completed: lease state and raw shared value updates are stored in the coordinator
 
 ### New storage adapter module under `/Users/owebeeone/limbo/grip-dev/glial-router-py/src/glial_router/`
 
@@ -285,7 +291,27 @@ These are new capabilities required by the revised SDD:
 - completed: remote session catalog/load/save tests exist
 - completed: remote session delete tests exist
 - completed: websocket live session fanout tests exist
-- add headed-to-headless shared projection tests against the FastAPI server
+- completed: shared projection graph, lease, and raw value update tests exist against the FastAPI server
+- remaining: add explicit headed-to-headless multi-client convergence tests if we want stronger end-to-end coverage
+
+## New Tooling Packages
+
+### `/Users/owebeeone/limbo/grip-dev/glial-control-py`
+
+- completed: command-driven Python control client exists for routed shared sessions
+- completed: supports session list, load, graph inspection, lease negotiation, release, and value updates
+- completed: remains application-agnostic by operating on canonical IDs and JSON-compatible values
+- completed: tests exist against the FastAPI router for session inspection and negotiated-primary flows
+- remaining: add a watch mode or live subscription mode if we move beyond polling
+
+### `/Users/owebeeone/limbo/grip-dev/glial-viewer-ts`
+
+- completed: generic React viewer app exists separate from `grip-react-demo`
+- completed: uses a raw shared-session Grok plus a viewer Grok rather than application-specific UI code
+- completed: supports dynamic grip materialization for unknown shared `grip_id` values
+- partial: passive tap metadata is visible in the UI, but explicit mismatch diagnostics are still minimal
+- completed: UI tests cover session load, primary negotiation, shared value updates, and refresh behavior
+- remaining: move from interval refresh to a live projector or websocket subscription if needed
 
 ## `grip-react-demo`
 
@@ -363,14 +389,15 @@ Required behavior:
 6. Add remote state storage adapter and remote session catalog in `glial-router-py`
 7. Update `glial-net-ts` and `glial-net-py` to implement shared-projection projectors for live sharing
 8. Add local and remote session browser UI in the demo
+9. Add generic shared control and viewer tools
 
 ## Immediate Next Slice
 
 The next practical slice should be:
 
-- add passive taps and tap materialization registries in `grip-core`
-- add shared-state projection build and apply paths in `grip-core`
-- update `glial-net-ts` to attach as a real shared-projection projector
-- add router-backed remote session catalog and demo remote-load flow
+- replace demo polling sync with true shared-projection client wiring in `glial-net-ts` and `glial-net-py`
+- add lease negotiation endpoints and client helpers end to end
+- build `glial-control-py`
+- build `glial-viewer-ts`
 
-That gives a stable base before touching live headed/headless sharing.
+That is the remaining work needed to move from backup-oriented demo sync to true routed headed/headed and headed/headless sharing.

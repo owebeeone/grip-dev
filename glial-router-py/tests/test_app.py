@@ -98,6 +98,90 @@ def test_remote_session_catalog_round_trip() -> None:
     assert load_response.json()["snapshot"]["session_id"] == "session-remote-a"
 
 
+def test_shared_session_graph_lease_and_value_round_trip() -> None:
+    client = TestClient(create_app())
+
+    save_response = client.put(
+        "/shared-sessions/session-shared-a",
+        params={"user_id": "user-a"},
+        json={
+            "title": "Shared A",
+            "snapshot": {
+                "session_id": "session-shared-a",
+                "contexts": {
+                    "main-home": {
+                        "path": "main-home",
+                        "name": "main-home",
+                        "children": [],
+                        "drips": {
+                            "app:Count": {
+                                "grip_id": "app:Count",
+                                "name": "Count",
+                                "value": 3,
+                                "taps": [],
+                            }
+                        },
+                    }
+                },
+                "taps": {
+                    "tap-count": {
+                        "tap_id": "tap-count",
+                        "tap_type": "AtomValueTap",
+                        "home_path": "main-home",
+                        "mode": "replicated",
+                        "role": "primary",
+                        "provides": ["app:Count"],
+                    }
+                },
+            },
+        },
+    )
+    assert save_response.status_code == 200
+
+    load_response = client.get(
+        "/shared-sessions/session-shared-a",
+        params={"user_id": "user-a"},
+    )
+    assert load_response.status_code == 200
+    assert load_response.json()["snapshot"]["taps"]["tap-count"]["tap_type"] == "AtomValueTap"
+
+    contexts_response = client.get(
+        "/shared-sessions/session-shared-a/contexts",
+        params={"user_id": "user-a"},
+    )
+    assert contexts_response.status_code == 200
+    assert "main-home" in contexts_response.json()
+
+    taps_response = client.get(
+        "/shared-sessions/session-shared-a/taps",
+        params={"user_id": "user-a"},
+    )
+    assert taps_response.status_code == 200
+    assert "tap-count" in taps_response.json()
+
+    lease_response = client.post(
+        "/shared-sessions/session-shared-a/leases/tap-count",
+        params={"user_id": "user-a"},
+        json={"replica_id": "headless-a", "priority": 50},
+    )
+    assert lease_response.status_code == 200
+    assert lease_response.json()["primary_replica_id"] == "headless-a"
+
+    value_response = client.post(
+        "/shared-sessions/session-shared-a/values",
+        params={"user_id": "user-a"},
+        json={"path": "main-home", "grip_id": "app:Count", "value": 9},
+    )
+    assert value_response.status_code == 200
+    assert value_response.json()["snapshot"]["contexts"]["main-home"]["drips"]["app:Count"]["value"] == 9
+
+    release_response = client.delete(
+        "/shared-sessions/session-shared-a/leases/tap-count",
+        params={"user_id": "user-a", "replica_id": "headless-a"},
+    )
+    assert release_response.status_code == 204
+
+
 def test_remote_session_delete_removes_session_from_catalog(tmp_path) -> None:
     client = TestClient(create_app())
 
@@ -188,6 +272,24 @@ def test_react_demo_static_bundle_is_served_with_spa_fallback(tmp_path) -> None:
     spa_response = client.get("/demo/settings/session-1")
     assert spa_response.status_code == 200
     assert "demo index" in spa_response.text
+
+
+def test_react_viewer_static_bundle_is_served_with_spa_fallback(tmp_path) -> None:
+    dist = tmp_path / "viewer-dist"
+    assets = dist / "assets"
+    assets.mkdir(parents=True)
+    (dist / "index.html").write_text("<html><body>viewer index</body></html>")
+    (assets / "app.js").write_text("console.log('viewer')")
+
+    client = TestClient(create_app(viewer_dist=dist))
+
+    asset_response = client.get("/viewer/assets/app.js")
+    assert asset_response.status_code == 200
+    assert "console.log('viewer')" in asset_response.text
+
+    spa_response = client.get("/viewer/sessions/shared-a")
+    assert spa_response.status_code == 200
+    assert "viewer index" in spa_response.text
 
 
 def test_websocket_attach_sends_snapshot_and_broadcasts_submitted_changes() -> None:

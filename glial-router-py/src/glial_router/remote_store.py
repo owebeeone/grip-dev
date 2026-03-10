@@ -26,6 +26,8 @@ class RemoteSessionRecord:
     user_id: str
     session_id: str
     snapshot: dict[str, Any]
+    shared_snapshot: dict[str, Any] | None = None
+    leases: dict[str, dict[str, Any]] = field(default_factory=dict)
     title: str | None = None
     last_modified_ms: int = field(default_factory=_now_ms)
 
@@ -40,6 +42,20 @@ class RemoteSessionStore(Protocol):
         *,
         snapshot: dict[str, Any],
         title: str | None = None,
+    ) -> RemoteSessionRecord: ...
+    def upsert_shared_snapshot(
+        self,
+        user_id: str,
+        session_id: str,
+        *,
+        shared_snapshot: dict[str, Any],
+        title: str | None = None,
+    ) -> RemoteSessionRecord: ...
+    def update_leases(
+        self,
+        user_id: str,
+        session_id: str,
+        leases: dict[str, dict[str, Any]],
     ) -> RemoteSessionRecord: ...
     def delete_session(self, user_id: str, session_id: str) -> bool: ...
 
@@ -77,6 +93,40 @@ class InMemoryRemoteSessionStore:
             sessions[session_id] = record
         record.snapshot = _clone(snapshot)
         record.title = title
+        record.last_modified_ms = _now_ms()
+        return _clone(record)
+
+    def upsert_shared_snapshot(
+        self,
+        user_id: str,
+        session_id: str,
+        *,
+        shared_snapshot: dict[str, Any],
+        title: str | None = None,
+    ) -> RemoteSessionRecord:
+        sessions = self._sessions_by_user.setdefault(user_id, {})
+        record = sessions.get(session_id)
+        if record is None:
+            record = RemoteSessionRecord(user_id=user_id, session_id=session_id, snapshot={})
+            sessions[session_id] = record
+        record.shared_snapshot = _clone(shared_snapshot)
+        if title is not None:
+            record.title = title
+        record.last_modified_ms = _now_ms()
+        return _clone(record)
+
+    def update_leases(
+        self,
+        user_id: str,
+        session_id: str,
+        leases: dict[str, dict[str, Any]],
+    ) -> RemoteSessionRecord:
+        sessions = self._sessions_by_user.setdefault(user_id, {})
+        record = sessions.get(session_id)
+        if record is None:
+            record = RemoteSessionRecord(user_id=user_id, session_id=session_id, snapshot={})
+            sessions[session_id] = record
+        record.leases = _clone(leases)
         record.last_modified_ms = _now_ms()
         return _clone(record)
 
@@ -126,8 +176,50 @@ class FilesystemRemoteSessionStore:
             user_id=user_id,
             session_id=session_id,
             snapshot=_clone(snapshot),
+            shared_snapshot=existing.shared_snapshot if existing is not None else None,
+            leases=_clone(existing.leases) if existing is not None else {},
             title=title,
             last_modified_ms=_now_ms() if existing is None else _now_ms(),
+        )
+        self._write_record(record)
+        return record
+
+    def upsert_shared_snapshot(
+        self,
+        user_id: str,
+        session_id: str,
+        *,
+        shared_snapshot: dict[str, Any],
+        title: str | None = None,
+    ) -> RemoteSessionRecord:
+        existing = self.get_session(user_id, session_id)
+        record = RemoteSessionRecord(
+            user_id=user_id,
+            session_id=session_id,
+            snapshot=_clone(existing.snapshot) if existing is not None else {},
+            shared_snapshot=_clone(shared_snapshot),
+            leases=_clone(existing.leases) if existing is not None else {},
+            title=title if title is not None else (existing.title if existing is not None else None),
+            last_modified_ms=_now_ms(),
+        )
+        self._write_record(record)
+        return record
+
+    def update_leases(
+        self,
+        user_id: str,
+        session_id: str,
+        leases: dict[str, dict[str, Any]],
+    ) -> RemoteSessionRecord:
+        existing = self.get_session(user_id, session_id)
+        record = RemoteSessionRecord(
+            user_id=user_id,
+            session_id=session_id,
+            snapshot=_clone(existing.snapshot) if existing is not None else {},
+            shared_snapshot=_clone(existing.shared_snapshot) if existing is not None else None,
+            leases=_clone(leases),
+            title=existing.title if existing is not None else None,
+            last_modified_ms=_now_ms(),
         )
         self._write_record(record)
         return record
@@ -156,6 +248,8 @@ class FilesystemRemoteSessionStore:
             user_id=payload["user_id"],
             session_id=payload["session_id"],
             snapshot=payload["snapshot"],
+            shared_snapshot=payload.get("shared_snapshot"),
+            leases=payload.get("leases", {}),
             title=payload.get("title"),
             last_modified_ms=int(payload["last_modified_ms"]),
         )
@@ -165,6 +259,8 @@ class FilesystemRemoteSessionStore:
             "user_id": record.user_id,
             "session_id": record.session_id,
             "snapshot": _clone(record.snapshot),
+            "shared_snapshot": _clone(record.shared_snapshot),
+            "leases": _clone(record.leases),
             "title": record.title,
             "last_modified_ms": record.last_modified_ms,
         }
