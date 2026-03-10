@@ -91,3 +91,38 @@ def test_http_grip_session_link_uses_snapshot_supplier_and_tracks_last_accept() 
 
     assert link.last_accepted_change is not None
     assert link.last_accepted_change.session_clock is not None
+
+
+def test_http_glial_client_manages_remote_sessions_against_fastapi_router() -> None:
+    test_client = TestClient(create_app())
+    client = HttpGlialClient(client=test_client)
+
+    saved = client.save_remote_session(
+        "user-a",
+        "session-remote-a",
+        {
+            "session_id": "session-remote-a",
+            "contexts": {
+                "/root": {
+                    "path": "/root",
+                    "name": "root",
+                    "children": [],
+                    "drips": {},
+                }
+            },
+        },
+        title="Remote A",
+    )
+    assert saved["session_id"] == "session-remote-a"
+
+    listed = client.list_remote_sessions("user-a")
+    assert len(listed) == 1
+    assert listed[0]["session_id"] == "session-remote-a"
+
+    loaded = client.load_remote_session("user-a", "session-remote-a")
+    assert loaded["snapshot"]["session_id"] == "session-remote-a"
+
+    deleted = client.delete_remote_session("user-a", "session-remote-a")
+    assert deleted is True
+
+    assert client.list_remote_sessions("user-a") == []

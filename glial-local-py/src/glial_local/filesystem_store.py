@@ -92,6 +92,7 @@ def _launcher_session_from_dict(data: dict) -> LauncherSessionRecord:
         glial_session_id=data["glial_session_id"],
         title=data.get("title"),
         storage_mode=data["storage_mode"],
+        session_kind=data.get("session_kind", "local"),
         last_opened_ms=data["last_opened_ms"],
     )
 

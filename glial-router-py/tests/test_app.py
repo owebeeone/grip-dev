@@ -1,6 +1,8 @@
 from fastapi.testclient import TestClient
 
 from glial_router import create_app
+from glial_router.coordinator import InMemoryGlialCoordinator
+from glial_router.remote_store import FilesystemRemoteSessionStore
 
 
 def test_attach_submit_change_and_replay_round_trip() -> None:
@@ -94,3 +96,221 @@ def test_remote_session_catalog_round_trip() -> None:
     )
     assert load_response.status_code == 200
     assert load_response.json()["snapshot"]["session_id"] == "session-remote-a"
+
+
+def test_remote_session_delete_removes_session_from_catalog(tmp_path) -> None:
+    client = TestClient(create_app())
+
+    save_response = client.put(
+        "/remote-sessions/session-remote-delete",
+        params={"user_id": "user-a"},
+        json={
+            "title": "Remote Delete",
+            "snapshot": {
+                "session_id": "session-remote-delete",
+                "contexts": {},
+            },
+        },
+    )
+    assert save_response.status_code == 200
+
+    delete_response = client.delete(
+        "/remote-sessions/session-remote-delete",
+        params={"user_id": "user-a"},
+    )
+    assert delete_response.status_code == 204
+
+    list_response = client.get("/remote-sessions", params={"user_id": "user-a"})
+    assert list_response.status_code == 200
+    assert list_response.json() == []
+
+    load_response = client.get(
+        "/remote-sessions/session-remote-delete",
+        params={"user_id": "user-a"},
+    )
+    assert load_response.status_code == 404
+
+
+def test_filesystem_remote_session_store_persists_across_app_instances(tmp_path) -> None:
+    store = FilesystemRemoteSessionStore(tmp_path / "router-remote-store")
+    first_client = TestClient(create_app(InMemoryGlialCoordinator(remote_session_store=store)))
+
+    save_response = first_client.put(
+        "/remote-sessions/session-remote-fs",
+        params={"user_id": "user-fs"},
+        json={
+            "title": "Filesystem Remote",
+            "snapshot": {
+                "session_id": "session-remote-fs",
+                "contexts": {
+                    "/root": {
+                        "path": "/root",
+                        "name": "root",
+                        "children": [],
+                        "drips": {},
+                    }
+                },
+            },
+        },
+    )
+    assert save_response.status_code == 200
+
+    second_client = TestClient(create_app(InMemoryGlialCoordinator(remote_session_store=store)))
+    list_response = second_client.get("/remote-sessions", params={"user_id": "user-fs"})
+    assert list_response.status_code == 200
+    assert list_response.json()[0]["session_id"] == "session-remote-fs"
+
+    load_response = second_client.get(
+        "/remote-sessions/session-remote-fs",
+        params={"user_id": "user-fs"},
+    )
+    assert load_response.status_code == 200
+    assert load_response.json()["snapshot"]["session_id"] == "session-remote-fs"
+
+
+def test_react_demo_static_bundle_is_served_with_spa_fallback(tmp_path) -> None:
+    dist = tmp_path / "demo-dist"
+    assets = dist / "assets"
+    assets.mkdir(parents=True)
+    (dist / "index.html").write_text("<html><body>demo index</body></html>")
+    (assets / "app.js").write_text("console.log('demo')")
+
+    client = TestClient(create_app(react_demo_dist=dist))
+
+    root_response = client.get("/")
+    assert root_response.status_code == 200
+    assert "demo index" in root_response.text
+
+    asset_response = client.get("/demo/assets/app.js")
+    assert asset_response.status_code == 200
+    assert "console.log('demo')" in asset_response.text
+
+    spa_response = client.get("/demo/settings/session-1")
+    assert spa_response.status_code == 200
+    assert "demo index" in spa_response.text
+
+
+def test_websocket_attach_sends_snapshot_and_broadcasts_submitted_changes() -> None:
+    client = TestClient(create_app())
+
+    seeded = client.post(
+        "/sessions/session-live/attach",
+        json={
+            "snapshot": {
+                "session_id": "session-live",
+                "contexts": {
+                    "/root": {
+                        "path": "/root",
+                        "name": "root",
+                        "children": [],
+                        "drips": {},
+                    }
+                },
+            }
+        },
+    )
+    assert seeded.status_code == 200
+
+    with (
+        client.websocket_connect("/sessions/session-live/ws") as replica_a,
+        client.websocket_connect("/sessions/session-live/ws") as replica_b,
+    ):
+        replica_a.send_json(
+            {
+                "type": "attach",
+                "replica_id": "replica-a",
+            }
+        )
+        attached_a = replica_a.receive_json()
+        assert attached_a["type"] == "attached"
+        assert attached_a["session_id"] == "session-live"
+        assert attached_a["snapshot"]["session_id"] == "session-live"
+
+        replica_b.send_json(
+            {
+                "type": "attach",
+                "replica_id": "replica-b",
+            }
+        )
+        attached_b = replica_b.receive_json()
+        assert attached_b["type"] == "attached"
+        assert attached_b["session_id"] == "session-live"
+
+        replica_a.send_json(
+            {
+                "type": "submit_change",
+                "change": {
+                    "change_id": "change-live-1",
+                    "session_id": "session-live",
+                    "source": "local",
+                    "status": "pending_sync",
+                    "target_kind": "drip",
+                    "path": "/root",
+                    "grip_id": "app:value",
+                    "payload": {
+                        "grip_id": "app:value",
+                        "name": "value",
+                        "value": 77,
+                        "taps": [],
+                    },
+                },
+            }
+        )
+
+        accepted_a = replica_a.receive_json()
+        accepted_b = replica_b.receive_json()
+        assert accepted_a["type"] == "accepted_change"
+        assert accepted_b["type"] == "accepted_change"
+        assert accepted_a["change"]["session_clock"]["logical_counter"] == 1
+        assert accepted_b["change"]["payload"]["value"] == 77
+
+
+def test_http_submitted_change_is_fanned_out_to_connected_websocket_replicas() -> None:
+    client = TestClient(create_app())
+
+    with client.websocket_connect("/sessions/session-http-live/ws") as replica:
+        replica.send_json(
+            {
+                "type": "attach",
+                "replica_id": "replica-http",
+                "snapshot": {
+                    "session_id": "session-http-live",
+                    "contexts": {
+                        "/root": {
+                            "path": "/root",
+                            "name": "root",
+                            "children": [],
+                            "drips": {},
+                        }
+                    },
+                },
+            }
+        )
+        attached = replica.receive_json()
+        assert attached["type"] == "attached"
+
+        response = client.post(
+            "/sessions/session-http-live/changes",
+            json={
+                "change": {
+                    "change_id": "change-http-1",
+                    "session_id": "session-http-live",
+                    "source": "local",
+                    "status": "pending_sync",
+                    "target_kind": "drip",
+                    "path": "/root",
+                    "grip_id": "app:value",
+                    "payload": {
+                        "grip_id": "app:value",
+                        "name": "value",
+                        "value": 88,
+                        "taps": [],
+                    },
+                }
+            },
+        )
+        assert response.status_code == 200
+
+        accepted = replica.receive_json()
+        assert accepted["type"] == "accepted_change"
+        assert accepted["change"]["payload"]["value"] == 88

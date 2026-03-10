@@ -1,4 +1,5 @@
 import type {
+  BrowserSessionKind,
   BrowserSessionRecord,
   BrowserSessionRecordStore,
   BrowserSessionStorageMode,
@@ -22,6 +23,7 @@ export async function ensureBrowserSessionRecord(
   opts?: {
     title?: string;
     storageMode?: BrowserSessionStorageMode;
+    sessionKind?: BrowserSessionKind;
     glialSessionId?: string;
   },
 ): Promise<BrowserSessionRecord> {
@@ -42,6 +44,7 @@ export async function ensureBrowserSessionRecord(
     glial_session_id: summary.session_id,
     title: summary.title ?? opts?.title,
     storage_mode: opts?.storageMode ?? "local",
+    session_kind: opts?.sessionKind ?? "local",
     last_opened_ms: nowMs(),
   };
   await store.putBrowserSession(record);
@@ -53,12 +56,14 @@ export async function bindBrowserSessionToExistingSession(
   browserSessionId: string,
   session: SessionSummary,
   storageMode: BrowserSessionStorageMode = "local",
+  sessionKind: BrowserSessionKind = "local",
 ): Promise<BrowserSessionRecord> {
   const record: BrowserSessionRecord = {
     browser_session_id: browserSessionId,
     glial_session_id: session.session_id,
     title: session.title,
     storage_mode: storageMode,
+    session_kind: sessionKind,
     last_opened_ms: nowMs(),
   };
   await store.putBrowserSession(record);

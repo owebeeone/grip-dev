@@ -20,6 +20,8 @@ class ResponseLike(Protocol):
 class RequestClientLike(Protocol):
     def get(self, url: str, **kwargs: Any) -> ResponseLike: ...
     def post(self, url: str, **kwargs: Any) -> ResponseLike: ...
+    def put(self, url: str, **kwargs: Any) -> ResponseLike: ...
+    def delete(self, url: str, **kwargs: Any) -> ResponseLike: ...
 
 
 def _to_jsonable(value: Any) -> Any:
@@ -111,6 +113,44 @@ class HttpGlialClient:
         response.raise_for_status()
         body = response.json()
         return [_change_from_json(item) for item in body["changes"]]
+
+    def list_remote_sessions(self, user_id: str) -> list[dict[str, Any]]:
+        response = self._client.get("/remote-sessions", params={"user_id": user_id})
+        response.raise_for_status()
+        body = response.json()
+        return list(body)
+
+    def load_remote_session(self, user_id: str, session_id: str) -> dict[str, Any]:
+        response = self._client.get(
+            f"/remote-sessions/{session_id}",
+            params={"user_id": user_id},
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def save_remote_session(
+        self,
+        user_id: str,
+        session_id: str,
+        snapshot: dict[str, Any],
+        *,
+        title: str | None = None,
+    ) -> dict[str, Any]:
+        response = self._client.put(
+            f"/remote-sessions/{session_id}",
+            params={"user_id": user_id},
+            json={"title": title, "snapshot": _to_jsonable(snapshot)},
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def delete_remote_session(self, user_id: str, session_id: str) -> bool:
+        response = self._client.delete(
+            f"/remote-sessions/{session_id}",
+            params={"user_id": user_id},
+        )
+        response.raise_for_status()
+        return True
 
 
 class HttpGripSessionLink(GripSessionLink):

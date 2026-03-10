@@ -8,6 +8,7 @@ from typing import Any, Literal, Protocol, TypeAlias
 
 SessionMode: TypeAlias = Literal["local", "shared"]
 LauncherSessionStorageMode: TypeAlias = Literal["local", "remote", "both"]
+LauncherSessionKind: TypeAlias = Literal["local", "glial-storage", "glial-shared"]
 ChangeSource: TypeAlias = Literal["local", "glial", "hydrate", "collapse"]
 ChangeStatus: TypeAlias = Literal["applied", "pending_sync", "confirmed", "superseded"]
 PersistenceTargetKind: TypeAlias = Literal["context", "child-order", "drip", "tap-meta", "remove"]
@@ -82,6 +83,7 @@ class LauncherSessionRecord:
     glial_session_id: str
     title: str | None
     storage_mode: LauncherSessionStorageMode
+    session_kind: LauncherSessionKind
     last_opened_ms: int
 
 

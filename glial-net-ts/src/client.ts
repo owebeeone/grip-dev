@@ -52,6 +52,17 @@ async function requestJson<T>(
   return response.json() as Promise<T>;
 }
 
+async function requestNoContent(
+  fetchImpl: typeof fetch,
+  input: string,
+  init?: RequestInit,
+): Promise<void> {
+  const response = await fetchImpl(input, init);
+  if (!response.ok) {
+    throw new Error(`Glial request failed: ${response.status}`);
+  }
+}
+
 export class HttpGlialClient {
   private readonly baseUrl: string;
   private readonly fetchImpl: typeof fetch;
@@ -128,15 +139,28 @@ export class HttpGlialClient {
       body: JSON.stringify({ title: title ?? null, snapshot }),
     });
   }
+
+  async deleteRemoteSession(userId: string, sessionId: string): Promise<void> {
+    const url = new URL(`${this.baseUrl}/remote-sessions/${sessionId}`);
+    url.searchParams.set("user_id", userId);
+    return requestNoContent(this.fetchImpl, url.toString(), {
+      method: "DELETE",
+    });
+  }
 }
 
 export class HttpGripSessionLink implements GripSessionLink {
   private lastAcceptedChange: PersistedChange | undefined;
+  private readonly client: HttpGlialClient;
+  private readonly snapshotProvider?: (sessionId: string) => Record<string, unknown> | undefined;
 
   constructor(
-    private readonly client: HttpGlialClient,
-    private readonly snapshotProvider?: (sessionId: string) => Record<string, unknown> | undefined,
-  ) {}
+    client: HttpGlialClient,
+    snapshotProvider?: (sessionId: string) => Record<string, unknown> | undefined,
+  ) {
+    this.client = client;
+    this.snapshotProvider = snapshotProvider;
+  }
 
   getLastAcceptedChange(): PersistedChange | undefined {
     return this.lastAcceptedChange;

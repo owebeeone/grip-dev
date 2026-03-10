@@ -224,8 +224,9 @@ These are new capabilities required by the revised SDD:
 
 ### `/Users/owebeeone/limbo/grip-dev/glial-net-ts/src/client.ts`
 
-- switch client assumptions from source-state backup to shared-state projection for Glial live attach
+- remaining: switch client assumptions from source-state backup to shared-state projection for Glial live attach
 - completed: remote session list/load/save client calls now exist
+- completed: remote session delete client call now exists
 - support browser session record update after remote load
 - support headed-to-headless and headed-to-headed follower hydration via passive taps
 - keep pending-sync and confirmation logic for local mutations
@@ -241,16 +242,17 @@ These are new capabilities required by the revised SDD:
 
 ### `/Users/owebeeone/limbo/grip-dev/glial-net-py/src/glial_net/client.py`
 
-- switch client assumptions from source-state backup to shared-state projection for Glial live attach
+- remaining: switch client assumptions from source-state backup to shared-state projection for Glial live attach
+- completed: remote session list/load/save/delete client calls now exist
 - support headless hydration using passive taps
-- support remote session load by authenticated user plus `glial_session_id`
+- completed: support remote session load by authenticated user plus `glial_session_id`
 - support takeover requests for negotiated-primary taps
 - implement the client as a `shared-projection` projector rather than a special-case attach API
 
 ### New modules under `/Users/owebeeone/limbo/grip-dev/glial-net-py/src/glial_net/`
 
 - add shared projection apply helpers
-- add remote session catalog client
+- completed: remote session catalog client support exists in the HTTP client
 - add tap materialization integration for headless runtimes
 
 ## `glial-router-py`
@@ -259,23 +261,30 @@ These are new capabilities required by the revised SDD:
 
 - completed: remote session catalog endpoints exist
 - completed: remote session load and save endpoints exist
+- completed: remote session delete endpoint exists
+- completed: websocket live session attach and accepted-change fanout endpoint exists
+- completed: built `grip-react-demo` bundle can be served from the router at `/demo/`
 - add storage mode aware session creation or attach endpoints if needed
 
 ### `/Users/owebeeone/limbo/grip-dev/glial-router-py/src/glial_router/coordinator.py`
 
 - keep live shared-session coordination
 - completed: remote source-state backup integration exists in-memory
+- completed: remote source-state backup now uses a dedicated storage adapter interface
 - keep shared projection generation separate from backup snapshot storage
 
 ### New storage adapter module under `/Users/owebeeone/limbo/grip-dev/glial-router-py/src/glial_router/`
 
-- partial: in-memory remote state storage keyed by user identity plus `glial_session_id` exists in the coordinator
-- remaining: extract it into a dedicated storage adapter module
-- remaining: add delete support for remote backup sessions
+- completed: dedicated remote storage adapter module exists
+- completed: in-memory remote state storage keyed by user identity plus `glial_session_id` exists
+- completed: filesystem remote state storage adapter exists for local development and tests
+- completed: delete support for remote backup sessions exists
 
 ### New test files under `/Users/owebeeone/limbo/grip-dev/glial-router-py/tests/`
 
 - completed: remote session catalog/load/save tests exist
+- completed: remote session delete tests exist
+- completed: websocket live session fanout tests exist
 - add headed-to-headless shared projection tests against the FastAPI server
 
 ## `grip-react-demo`
@@ -286,26 +295,28 @@ These are new capabilities required by the revised SDD:
 - completed: stores `browser_session_id -> glial_session_id`
 - completed: stores local/remote/both mode on the browser session record
 - completed: supports listing local sessions
-- support loading remote sessions
+- completed: supports loading remote sessions
+- completed: current browser session record now distinguishes local, Glial storage, and Glial shared kinds
 
 ### `/Users/owebeeone/limbo/grip-dev/grip-react-demo/src/bootstrap.tsx`
 
 - completed: source-state local restore still works for local mode
 - completed: bootstrap now reads the browser session record instead of a raw session ID
-- remaining: add remote load path that attaches as Glial-routed by default
+- completed: remote session kinds now attach a Glial-backed source-state sync loop on startup
 
 ### `/Users/owebeeone/limbo/grip-dev/grip-react-demo/src/App.tsx`
 
 - partial: App now shows the current logical session and loads existing local sessions
-- remaining: add controls for local, remote, or both storage mode
-- partial: current routing/storage mode is displayed, but remote attach is not implemented yet
+- completed: App now shows the current logical session kind and storage mode
+- completed: controls for local, remote, or both storage mode now exist
+- completed: remote shared and remote storage session load/create controls now exist
 
 ### New session browser UI files under `/Users/owebeeone/limbo/grip-dev/grip-react-demo/src/`
 
-- add local session list UI
-- add remote session list UI
-- add “load session” actions
-- add “attach to Glial” or routing status UI
+- completed: local session list UI exists in `App.tsx`
+- completed: remote session list UI exists in `App.tsx`
+- completed: “load session” actions exist for local, Glial shared, and Glial storage sessions
+- partial: current routing status is visible through the session-kind display, but richer attach status is still optional
 
 ### `/Users/owebeeone/limbo/grip-dev/grip-react-demo/src/demo_session.test.ts`
 

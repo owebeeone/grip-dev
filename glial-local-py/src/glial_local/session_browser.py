@@ -8,6 +8,7 @@ from uuid import uuid4
 from .in_memory import _now_ms
 from .types import (
     GripSessionStore,
+    LauncherSessionKind,
     LauncherSessionRecord,
     LauncherSessionRecordStore,
     LauncherSessionStorageMode,
@@ -30,6 +31,7 @@ def ensure_launcher_session_record(
     *,
     title: str | None = None,
     storage_mode: LauncherSessionStorageMode = "local",
+    session_kind: LauncherSessionKind = "local",
     glial_session_id: str | None = None,
 ) -> LauncherSessionRecord:
     existing = store.get_launcher_session(launcher_session_id)
@@ -47,6 +49,7 @@ def ensure_launcher_session_record(
         glial_session_id=summary.session_id,
         title=summary.title or title,
         storage_mode=storage_mode,
+        session_kind=session_kind,
         last_opened_ms=_now_ms(),
     )
     store.put_launcher_session(record)
@@ -58,12 +61,14 @@ def bind_launcher_session_to_existing_session(
     launcher_session_id: str,
     session: SessionSummary,
     storage_mode: LauncherSessionStorageMode = "local",
+    session_kind: LauncherSessionKind = "local",
 ) -> LauncherSessionRecord:
     record = LauncherSessionRecord(
         launcher_session_id=launcher_session_id,
         glial_session_id=session.session_id,
         title=session.title,
         storage_mode=storage_mode,
+        session_kind=session_kind,
         last_opened_ms=_now_ms(),
     )
     store.put_launcher_session(record)

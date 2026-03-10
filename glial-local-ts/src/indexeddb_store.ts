@@ -1,6 +1,7 @@
 import type {
   BrowserSessionRecord,
   BrowserSessionRecordStore,
+  BrowserSessionKind,
   GripSessionStore,
   HydratedSession,
   NewSessionRequest,
@@ -34,6 +35,13 @@ function clone<T>(value: T): T {
 
 function nowMs(): number {
   return Date.now();
+}
+
+function normalizeBrowserSessionRecord(record: BrowserSessionRecord): BrowserSessionRecord {
+  return {
+    ...record,
+    session_kind: (record as BrowserSessionRecord & { session_kind?: BrowserSessionKind }).session_kind ?? "local",
+  };
 }
 
 function createEmptySnapshot(sessionId?: string): SessionSnapshot {
@@ -163,7 +171,9 @@ export class IndexedDbGripSessionStore implements GripSessionStore, BrowserSessi
       tx.objectStore(this.browserSessionStoreName).getAll(),
     ) as BrowserSessionRecord[];
     await transactionToPromise(tx);
-    return records.map((record) => clone(record)).sort((a, b) => b.last_opened_ms - a.last_opened_ms);
+    return records
+      .map((record) => normalizeBrowserSessionRecord(clone(record)))
+      .sort((a, b) => b.last_opened_ms - a.last_opened_ms);
   }
 
   async getBrowserSession(browser_session_id: string): Promise<BrowserSessionRecord | null> {
@@ -173,13 +183,13 @@ export class IndexedDbGripSessionStore implements GripSessionStore, BrowserSessi
       tx.objectStore(this.browserSessionStoreName).get(browser_session_id),
     ) as BrowserSessionRecord | undefined;
     await transactionToPromise(tx);
-    return clone(record ?? null);
+    return record ? normalizeBrowserSessionRecord(clone(record)) : null;
   }
 
   async putBrowserSession(record: BrowserSessionRecord): Promise<void> {
     const db = await this.getDb();
     const tx = db.transaction(this.browserSessionStoreName, "readwrite");
-    tx.objectStore(this.browserSessionStoreName).put(clone(record));
+    tx.objectStore(this.browserSessionStoreName).put(clone(normalizeBrowserSessionRecord(record)));
     await transactionToPromise(tx);
   }
 

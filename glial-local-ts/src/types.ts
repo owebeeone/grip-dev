@@ -1,5 +1,6 @@
 export type SessionMode = "local" | "shared";
 export type BrowserSessionStorageMode = "local" | "remote" | "both";
+export type BrowserSessionKind = "local" | "glial-storage" | "glial-shared";
 export type ChangeSource = "local" | "glial" | "hydrate" | "collapse";
 export type ChangeStatus = "applied" | "pending_sync" | "confirmed" | "superseded";
 export type PersistenceTargetKind = "context" | "child-order" | "drip" | "tap-meta" | "remove";
@@ -65,6 +66,7 @@ export interface BrowserSessionRecord {
   glial_session_id: string;
   title?: string;
   storage_mode: BrowserSessionStorageMode;
+  session_kind: BrowserSessionKind;
   last_opened_ms: number;
 }
 

@@ -17,6 +17,7 @@ from .models import (
     UpsertRemoteSessionRequest,
     VirtualClockModel,
 )
+from .remote_store import InMemoryRemoteSessionStore, RemoteSessionRecord, RemoteSessionStore
 
 
 def _now_ms() -> int:
@@ -109,20 +110,12 @@ class _SessionState:
         )
 
 
-@dataclass(slots=True)
-class _RemoteSessionState:
-    session_id: str
-    snapshot: dict[str, Any]
-    title: str | None = None
-    last_modified_ms: int = field(default_factory=_now_ms)
-
-
 class InMemoryGlialCoordinator:
     """Minimal authoritative session coordinator with attach, change, and replay flows."""
 
-    def __init__(self) -> None:
+    def __init__(self, remote_session_store: RemoteSessionStore | None = None) -> None:
         self._sessions: dict[str, _SessionState] = {}
-        self._remote_sessions_by_user: dict[str, dict[str, _RemoteSessionState]] = {}
+        self._remote_session_store = remote_session_store or InMemoryRemoteSessionStore()
 
     def attach(self, session_id: str, request: AttachSessionRequest) -> AttachSessionResponse:
         session = self._sessions.get(session_id)
@@ -175,7 +168,6 @@ class InMemoryGlialCoordinator:
         )
 
     def list_remote_sessions(self, user_id: str) -> list[RemoteSessionSummaryModel]:
-        sessions = self._remote_sessions_by_user.get(user_id, {})
         return [
             RemoteSessionSummaryModel(
                 session_id=session.session_id,
@@ -183,7 +175,7 @@ class InMemoryGlialCoordinator:
                 last_modified_ms=session.last_modified_ms,
             )
             for session in sorted(
-                sessions.values(),
+                self._remote_session_store.list_sessions(user_id),
                 key=lambda session: session.last_modified_ms,
                 reverse=True,
             )
@@ -204,14 +196,12 @@ class InMemoryGlialCoordinator:
         session_id: str,
         request: UpsertRemoteSessionRequest,
     ) -> RemoteSessionLoadResponse:
-        sessions = self._remote_sessions_by_user.setdefault(user_id, {})
-        session = sessions.get(session_id)
-        if session is None:
-            session = _RemoteSessionState(session_id=session_id, snapshot={})
-            sessions[session_id] = session
-        session.snapshot = _clone(request.snapshot)
-        session.title = request.title
-        session.last_modified_ms = _now_ms()
+        session = self._remote_session_store.upsert_session(
+            user_id,
+            session_id,
+            snapshot=request.snapshot,
+            title=request.title,
+        )
         return RemoteSessionLoadResponse(
             session_id=session.session_id,
             title=session.title,
@@ -219,14 +209,17 @@ class InMemoryGlialCoordinator:
             last_modified_ms=session.last_modified_ms,
         )
 
+    def delete_remote_session(self, user_id: str, session_id: str) -> bool:
+        return self._remote_session_store.delete_session(user_id, session_id)
+
     def _require_session(self, session_id: str) -> _SessionState:
         session = self._sessions.get(session_id)
         if session is None:
             raise KeyError(session_id)
         return session
 
-    def _require_remote_session(self, user_id: str, session_id: str) -> _RemoteSessionState:
-        session = self._remote_sessions_by_user.get(user_id, {}).get(session_id)
+    def _require_remote_session(self, user_id: str, session_id: str) -> RemoteSessionRecord:
+        session = self._remote_session_store.get_session(user_id, session_id)
         if session is None:
             raise KeyError(f"{user_id}:{session_id}")
         return session

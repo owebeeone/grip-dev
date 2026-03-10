@@ -134,7 +134,8 @@ describe("HttpGlialClient", () => {
         title: "Remote A updated",
         snapshot: { session_id: "session-remote-a", contexts: { "/root": { path: "/root" } } },
         last_modified_ms: 200,
-      }));
+      }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
 
     const client = new HttpGlialClient({
       baseUrl: "http://glial.test",
@@ -154,6 +155,25 @@ describe("HttpGlialClient", () => {
       "Remote A updated",
     );
     expect(saved.title).toBe("Remote A updated");
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+
+    await expect(client.deleteRemoteSession("user-a", "session-remote-a")).resolves.toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
+  it("treats a missing remote delete as an error", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(
+      new Response(JSON.stringify({ detail: "missing" }), {
+        status: 404,
+        headers: { "content-type": "application/json" },
+      }));
+
+    const client = new HttpGlialClient({
+      baseUrl: "http://glial.test",
+      fetchImpl: fetchMock,
+    });
+
+    await expect(client.deleteRemoteSession("user-a", "missing")).rejects.toThrow(
+      "Glial request failed: 404",
+    );
   });
 });

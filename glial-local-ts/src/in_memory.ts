@@ -1,4 +1,5 @@
 import type {
+  BrowserSessionKind,
   BrowserSessionRecord,
   BrowserSessionRecordStore,
   ContextState,
@@ -34,6 +35,13 @@ function clone<T>(value: T): T {
 
 function nowMs(): number {
   return Date.now();
+}
+
+function normalizeBrowserSessionRecord(record: BrowserSessionRecord): BrowserSessionRecord {
+  return {
+    ...record,
+    session_kind: (record as BrowserSessionRecord & { session_kind?: BrowserSessionKind }).session_kind ?? "local",
+  };
 }
 
 function createEmptySnapshot(sessionId?: string): SessionSnapshot {
@@ -132,16 +140,20 @@ export class InMemoryGripSessionStore implements GripSessionStore, BrowserSessio
 
   async listBrowserSessions(): Promise<BrowserSessionRecord[]> {
     return Array.from(this.browserSessions.values())
-      .map((record) => clone(record))
+      .map((record) => normalizeBrowserSessionRecord(clone(record)))
       .sort((a, b) => b.last_opened_ms - a.last_opened_ms);
   }
 
   async getBrowserSession(browser_session_id: string): Promise<BrowserSessionRecord | null> {
-    return clone(this.browserSessions.get(browser_session_id) ?? null);
+    const record = this.browserSessions.get(browser_session_id);
+    return record ? normalizeBrowserSessionRecord(clone(record)) : null;
   }
 
   async putBrowserSession(record: BrowserSessionRecord): Promise<void> {
-    this.browserSessions.set(record.browser_session_id, clone(record));
+    this.browserSessions.set(
+      record.browser_session_id,
+      clone(normalizeBrowserSessionRecord(record)),
+    );
   }
 
   async removeBrowserSession(browser_session_id: string): Promise<void> {

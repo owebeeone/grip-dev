@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -69,3 +70,26 @@ class RemoteSessionLoadResponse(BaseModel):
 class UpsertRemoteSessionRequest(BaseModel):
     title: str | None = None
     snapshot: dict[str, Any]
+
+
+class WebSocketAttachRequest(BaseModel):
+    type: Literal["attach"]
+    replica_id: str
+    snapshot: dict[str, Any] | None = None
+
+
+class WebSocketSubmitChangeRequest(BaseModel):
+    type: Literal["submit_change"]
+    change: PersistedChangeModel
+
+
+class WebSocketAttachedEvent(BaseModel):
+    type: Literal["attached"] = "attached"
+    session_id: str
+    snapshot: dict[str, Any]
+    last_clock: VirtualClockModel
+
+
+class WebSocketAcceptedChangeEvent(BaseModel):
+    type: Literal["accepted_change"] = "accepted_change"
+    change: PersistedChangeModel
