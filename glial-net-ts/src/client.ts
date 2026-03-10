@@ -22,6 +22,19 @@ export interface ReplayResponse {
   last_clock: GlialClock;
 }
 
+export interface RemoteSessionSummary {
+  session_id: string;
+  title?: string;
+  last_modified_ms: number;
+}
+
+export interface RemoteSessionLoadResponse {
+  session_id: string;
+  title?: string;
+  snapshot: Record<string, unknown>;
+  last_modified_ms: number;
+}
+
 export interface HttpGlialClientOptions {
   baseUrl: string;
   fetchImpl?: typeof fetch;
@@ -87,6 +100,33 @@ export class HttpGlialClient {
     const url = new URL(`${this.baseUrl}/sessions/${sessionId}/replay`);
     url.searchParams.set("since_counter", String(sinceCounter));
     return requestJson<ReplayResponse>(this.fetchImpl, url.toString());
+  }
+
+  async listRemoteSessions(userId: string): Promise<RemoteSessionSummary[]> {
+    const url = new URL(`${this.baseUrl}/remote-sessions`);
+    url.searchParams.set("user_id", userId);
+    return requestJson<RemoteSessionSummary[]>(this.fetchImpl, url.toString());
+  }
+
+  async loadRemoteSession(userId: string, sessionId: string): Promise<RemoteSessionLoadResponse> {
+    const url = new URL(`${this.baseUrl}/remote-sessions/${sessionId}`);
+    url.searchParams.set("user_id", userId);
+    return requestJson<RemoteSessionLoadResponse>(this.fetchImpl, url.toString());
+  }
+
+  async saveRemoteSession(
+    userId: string,
+    sessionId: string,
+    snapshot: Record<string, unknown>,
+    title?: string,
+  ): Promise<RemoteSessionLoadResponse> {
+    const url = new URL(`${this.baseUrl}/remote-sessions/${sessionId}`);
+    url.searchParams.set("user_id", userId);
+    return requestJson<RemoteSessionLoadResponse>(this.fetchImpl, url.toString(), {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: title ?? null, snapshot }),
+    });
   }
 }
 

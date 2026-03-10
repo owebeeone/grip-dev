@@ -8,6 +8,8 @@
 - add save, collapse, and hydrate tests covering empty sessions, dirty sessions, collapsed sessions, and sessions with pending shared changes
 - add collapse and compaction tests proving obsolete applied changes are removed while pending shared changes and checkpoints remain
 - add session catalog tests for list, create, remove, and metadata persistence
+- add browser-session-record tests proving `browser_session_id -> glial_session_id` mapping survives reload
+- add local session-browser tests proving a developer can enumerate local sessions and reload one into the current browser runtime
 - add corruption-handling tests proving hydrate fails closed or requests reset rather than inventing state
 
 ## Goal
@@ -16,6 +18,8 @@ Implement the first real local persistence backends:
 
 - IndexedDB for TypeScript or browser runtimes
 - filesystem storage for Python runtimes
+ - browser-local session record storage mapping `browser_session_id` to `glial_session_id`
+ - local debug session browser for listing and loading stored sessions
 
 This phase makes local-only persistence a working product feature.
 
@@ -26,6 +30,7 @@ This phase makes local-only persistence a working product feature.
 - local snapshot storage
 - local incremental journal storage
 - session catalog
+- browser session record catalog
 - sync checkpoint storage
 - collapse or compaction support
 
@@ -46,15 +51,19 @@ Python:
 
 1. Design concrete local storage layout for sessions, snapshots, changes, and checkpoints.
 2. Implement `newSession`, `listSessions`, `hydrate`, `writeChange`, `replaceSnapshot`, `collapse`, and `removeSession`.
-3. Ensure `collapse` preserves pending shared changes and sync checkpoint metadata.
-4. Expose local-only reload restore flow in a small reference integration.
-5. Validate that the local-only path works with no Glial service available.
+3. Add browser-local session records that map reloadable browser sessions to logical `glial_session_id` values and storage mode.
+4. Ensure `collapse` preserves pending shared changes and sync checkpoint metadata.
+5. Expose local-only reload restore flow in a small reference integration.
+6. Add a debug or developer session browser for locally stored sessions.
+7. Validate that the local-only path works with no Glial service available.
 
 ## Exit Criteria
 
 - browser sessions persist locally and restore after reload
 - Python sessions persist locally and restore after process restart
 - session catalog operations work locally
+- browser-local session records reopen the intended logical session on reload
+- a developer can enumerate and reload local sessions for debugging
 - collapse compacts local history correctly
 - the runtime can rely on local persistence as the default path before any Glial attachment
 

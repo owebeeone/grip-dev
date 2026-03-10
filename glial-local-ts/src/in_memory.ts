@@ -1,4 +1,6 @@
 import type {
+  BrowserSessionRecord,
+  BrowserSessionRecordStore,
   ContextState,
   EnableSharingRequest,
   GripSessionLink,
@@ -93,8 +95,9 @@ function applyChangeToSnapshot(snapshot: SessionSnapshot, change: PersistedChang
   }
 }
 
-export class InMemoryGripSessionStore implements GripSessionStore {
+export class InMemoryGripSessionStore implements GripSessionStore, BrowserSessionRecordStore {
   private readonly sessions = new Map<string, SessionRecord>();
+  private readonly browserSessions = new Map<string, BrowserSessionRecord>();
 
   async newSession(request: NewSessionRequest): Promise<SessionSummary> {
     const session_id = request.session_id ?? `session_${Math.random().toString(36).slice(2, 10)}`;
@@ -125,6 +128,24 @@ export class InMemoryGripSessionStore implements GripSessionStore {
 
   async getSession(session_id: string): Promise<SessionSummary | null> {
     return clone(this.sessions.get(session_id)?.summary ?? null);
+  }
+
+  async listBrowserSessions(): Promise<BrowserSessionRecord[]> {
+    return Array.from(this.browserSessions.values())
+      .map((record) => clone(record))
+      .sort((a, b) => b.last_opened_ms - a.last_opened_ms);
+  }
+
+  async getBrowserSession(browser_session_id: string): Promise<BrowserSessionRecord | null> {
+    return clone(this.browserSessions.get(browser_session_id) ?? null);
+  }
+
+  async putBrowserSession(record: BrowserSessionRecord): Promise<void> {
+    this.browserSessions.set(record.browser_session_id, clone(record));
+  }
+
+  async removeBrowserSession(browser_session_id: string): Promise<void> {
+    this.browserSessions.delete(browser_session_id);
   }
 
   async hydrate(session_id: string): Promise<HydratedSession> {

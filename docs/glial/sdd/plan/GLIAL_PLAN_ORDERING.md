@@ -19,6 +19,7 @@ They establish:
 - deterministic local mutation sequencing
 - one runtime-facing persistence abstraction
 - working local-only persistence in browsers and Python
+- browser-local session records and local session browsing before any remote dependency
 
 That gives a usable product baseline before any shared-session work starts.
 
@@ -26,6 +27,7 @@ After that, the server comes before client Glial attachment because:
 
 - the client reconciliation path depends on authoritative server behavior
 - replay, reset, lease, and clock semantics need a real implementation target
+- remote backup and remote session catalog need a server-side authority before browser load or attach behavior can be finalized
 - it reduces churn in the client link and persistence reconciliation code
 
 ## Dependency Rules

@@ -11,7 +11,10 @@ from .models import (
     AttachSessionResponse,
     PersistedChangeModel,
     ReplayResponse,
+    RemoteSessionLoadResponse,
+    RemoteSessionSummaryModel,
     SubmitChangeResponse,
+    UpsertRemoteSessionRequest,
     VirtualClockModel,
 )
 
@@ -106,11 +109,20 @@ class _SessionState:
         )
 
 
+@dataclass(slots=True)
+class _RemoteSessionState:
+    session_id: str
+    snapshot: dict[str, Any]
+    title: str | None = None
+    last_modified_ms: int = field(default_factory=_now_ms)
+
+
 class InMemoryGlialCoordinator:
     """Minimal authoritative session coordinator with attach, change, and replay flows."""
 
     def __init__(self) -> None:
         self._sessions: dict[str, _SessionState] = {}
+        self._remote_sessions_by_user: dict[str, dict[str, _RemoteSessionState]] = {}
 
     def attach(self, session_id: str, request: AttachSessionRequest) -> AttachSessionResponse:
         session = self._sessions.get(session_id)
@@ -162,8 +174,59 @@ class InMemoryGlialCoordinator:
             last_clock=session.last_clock(),
         )
 
+    def list_remote_sessions(self, user_id: str) -> list[RemoteSessionSummaryModel]:
+        sessions = self._remote_sessions_by_user.get(user_id, {})
+        return [
+            RemoteSessionSummaryModel(
+                session_id=session.session_id,
+                title=session.title,
+                last_modified_ms=session.last_modified_ms,
+            )
+            for session in sorted(
+                sessions.values(),
+                key=lambda session: session.last_modified_ms,
+                reverse=True,
+            )
+        ]
+
+    def get_remote_session(self, user_id: str, session_id: str) -> RemoteSessionLoadResponse:
+        session = self._require_remote_session(user_id, session_id)
+        return RemoteSessionLoadResponse(
+            session_id=session.session_id,
+            title=session.title,
+            snapshot=_clone(session.snapshot),
+            last_modified_ms=session.last_modified_ms,
+        )
+
+    def save_remote_session(
+        self,
+        user_id: str,
+        session_id: str,
+        request: UpsertRemoteSessionRequest,
+    ) -> RemoteSessionLoadResponse:
+        sessions = self._remote_sessions_by_user.setdefault(user_id, {})
+        session = sessions.get(session_id)
+        if session is None:
+            session = _RemoteSessionState(session_id=session_id, snapshot={})
+            sessions[session_id] = session
+        session.snapshot = _clone(request.snapshot)
+        session.title = request.title
+        session.last_modified_ms = _now_ms()
+        return RemoteSessionLoadResponse(
+            session_id=session.session_id,
+            title=session.title,
+            snapshot=_clone(session.snapshot),
+            last_modified_ms=session.last_modified_ms,
+        )
+
     def _require_session(self, session_id: str) -> _SessionState:
         session = self._sessions.get(session_id)
         if session is None:
             raise KeyError(session_id)
+        return session
+
+    def _require_remote_session(self, user_id: str, session_id: str) -> _RemoteSessionState:
+        session = self._remote_sessions_by_user.get(user_id, {}).get(session_id)
+        if session is None:
+            raise KeyError(f"{user_id}:{session_id}")
         return session

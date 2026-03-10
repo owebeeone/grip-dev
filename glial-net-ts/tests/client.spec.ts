@@ -113,4 +113,47 @@ describe("HttpGlialClient", () => {
 
     expect(link.getLastAcceptedChange()?.session_clock?.logical_counter).toBe(1);
   });
+
+  it("lists, loads, and saves remote sessions via fetch", async () => {
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse([
+        {
+          session_id: "session-remote-a",
+          title: "Remote A",
+          last_modified_ms: 100,
+        },
+      ]))
+      .mockResolvedValueOnce(jsonResponse({
+        session_id: "session-remote-a",
+        title: "Remote A",
+        snapshot: { session_id: "session-remote-a", contexts: {} },
+        last_modified_ms: 100,
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        session_id: "session-remote-a",
+        title: "Remote A updated",
+        snapshot: { session_id: "session-remote-a", contexts: { "/root": { path: "/root" } } },
+        last_modified_ms: 200,
+      }));
+
+    const client = new HttpGlialClient({
+      baseUrl: "http://glial.test",
+      fetchImpl: fetchMock,
+    });
+
+    const listed = await client.listRemoteSessions("user-a");
+    expect(listed).toHaveLength(1);
+
+    const loaded = await client.loadRemoteSession("user-a", "session-remote-a");
+    expect(loaded.session_id).toBe("session-remote-a");
+
+    const saved = await client.saveRemoteSession(
+      "user-a",
+      "session-remote-a",
+      { session_id: "session-remote-a", contexts: { "/root": { path: "/root" } } },
+      "Remote A updated",
+    );
+    expect(saved.title).toBe("Remote A updated");
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
 });

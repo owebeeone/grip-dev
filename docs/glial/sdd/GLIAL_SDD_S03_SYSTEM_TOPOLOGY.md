@@ -79,6 +79,7 @@ Glial requires durable storage for at least:
 - recent snapshots
 - enough replay state to support reconnect
 - shard recovery after failure
+- remote session backup and remote session catalog lookups keyed by authenticated user identity plus `glial_session_id`
 
 This store may be implemented separately from the session directory.
 

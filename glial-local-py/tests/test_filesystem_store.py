@@ -1,7 +1,10 @@
 from tempfile import TemporaryDirectory
 
 from glial_local import (
+    bind_launcher_session_to_existing_session,
     ContextState,
+    create_launcher_session_id,
+    ensure_launcher_session_record,
     FilesystemGripSessionStore,
     NewSessionRequest,
     PersistedChange,
@@ -51,3 +54,30 @@ def test_filesystem_store_persists_across_instances_and_collapses() -> None:
         reloaded.collapse("session-a")
         hydrated = reloaded.hydrate("session-a")
         assert hydrated.applied_changes == []
+
+
+def test_filesystem_store_persists_launcher_session_records() -> None:
+    with TemporaryDirectory() as tmp:
+        store = FilesystemGripSessionStore(tmp)
+        launcher_session_id = create_launcher_session_id("fs")
+
+        initial = ensure_launcher_session_record(
+            store,
+            launcher_session_id,
+            title="Filesystem session",
+            storage_mode="local",
+        )
+        replacement = store.new_session(NewSessionRequest(title="Replacement session"))
+        bind_launcher_session_to_existing_session(
+            store,
+            launcher_session_id,
+            replacement,
+            "local",
+        )
+
+        reloaded = FilesystemGripSessionStore(tmp)
+        listed = reloaded.list_launcher_sessions()
+        assert len(listed) == 1
+        assert listed[0].launcher_session_id == launcher_session_id
+        assert listed[0].glial_session_id == replacement.session_id
+        assert listed[0].glial_session_id != initial.glial_session_id

@@ -1,4 +1,6 @@
 import type {
+  BrowserSessionRecord,
+  BrowserSessionRecordStore,
   GripSessionStore,
   HydratedSession,
   NewSessionRequest,
@@ -21,6 +23,7 @@ interface PersistedSessionRecord {
 interface IndexedDbGripSessionStoreOptions {
   databaseName?: string;
   objectStoreName?: string;
+  browserSessionStoreName?: string;
   indexedDB?: IDBFactory;
 }
 
@@ -101,15 +104,17 @@ function transactionToPromise(transaction: IDBTransaction): Promise<void> {
   });
 }
 
-export class IndexedDbGripSessionStore implements GripSessionStore {
+export class IndexedDbGripSessionStore implements GripSessionStore, BrowserSessionRecordStore {
   private readonly databaseName: string;
   private readonly objectStoreName: string;
+  private readonly browserSessionStoreName: string;
   private readonly indexedDB: IDBFactory;
   private dbPromise?: Promise<IDBDatabase>;
 
   constructor(opts?: IndexedDbGripSessionStoreOptions) {
     this.databaseName = opts?.databaseName ?? "glial-local";
     this.objectStoreName = opts?.objectStoreName ?? "sessions";
+    this.browserSessionStoreName = opts?.browserSessionStoreName ?? "browser_sessions";
     if (!opts?.indexedDB && !globalThis.indexedDB) {
       throw new Error("indexedDB is not available in this environment");
     }
@@ -149,6 +154,40 @@ export class IndexedDbGripSessionStore implements GripSessionStore {
   async getSession(session_id: string): Promise<SessionSummary | null> {
     const record = await this.getRecord(session_id);
     return clone(record?.summary ?? null);
+  }
+
+  async listBrowserSessions(): Promise<BrowserSessionRecord[]> {
+    const db = await this.getDb();
+    const tx = db.transaction(this.browserSessionStoreName, "readonly");
+    const records = await requestToPromise(
+      tx.objectStore(this.browserSessionStoreName).getAll(),
+    ) as BrowserSessionRecord[];
+    await transactionToPromise(tx);
+    return records.map((record) => clone(record)).sort((a, b) => b.last_opened_ms - a.last_opened_ms);
+  }
+
+  async getBrowserSession(browser_session_id: string): Promise<BrowserSessionRecord | null> {
+    const db = await this.getDb();
+    const tx = db.transaction(this.browserSessionStoreName, "readonly");
+    const record = await requestToPromise(
+      tx.objectStore(this.browserSessionStoreName).get(browser_session_id),
+    ) as BrowserSessionRecord | undefined;
+    await transactionToPromise(tx);
+    return clone(record ?? null);
+  }
+
+  async putBrowserSession(record: BrowserSessionRecord): Promise<void> {
+    const db = await this.getDb();
+    const tx = db.transaction(this.browserSessionStoreName, "readwrite");
+    tx.objectStore(this.browserSessionStoreName).put(clone(record));
+    await transactionToPromise(tx);
+  }
+
+  async removeBrowserSession(browser_session_id: string): Promise<void> {
+    const db = await this.getDb();
+    const tx = db.transaction(this.browserSessionStoreName, "readwrite");
+    tx.objectStore(this.browserSessionStoreName).delete(browser_session_id);
+    await transactionToPromise(tx);
   }
 
   async hydrate(session_id: string): Promise<HydratedSession> {
@@ -235,11 +274,14 @@ export class IndexedDbGripSessionStore implements GripSessionStore {
   private async getDb(): Promise<IDBDatabase> {
     if (!this.dbPromise) {
       this.dbPromise = new Promise((resolve, reject) => {
-        const request = this.indexedDB.open(this.databaseName, 1);
+        const request = this.indexedDB.open(this.databaseName, 2);
         request.onupgradeneeded = () => {
           const db = request.result;
           if (!db.objectStoreNames.contains(this.objectStoreName)) {
             db.createObjectStore(this.objectStoreName, { keyPath: "session_id" });
+          }
+          if (!db.objectStoreNames.contains(this.browserSessionStoreName)) {
+            db.createObjectStore(this.browserSessionStoreName, { keyPath: "browser_session_id" });
           }
         };
         request.onsuccess = () => resolve(request.result);

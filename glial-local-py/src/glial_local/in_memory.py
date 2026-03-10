@@ -6,6 +6,7 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from time import time
 from typing import Callable, TypeVar
+from uuid import uuid4
 
 from .types import (
     ContextState,
@@ -14,6 +15,8 @@ from .types import (
     GripSessionPersistence,
     GripSessionStore,
     HydratedSession,
+    LauncherSessionRecord,
+    LauncherSessionRecordStore,
     NewSessionRequest,
     PersistedChange,
     PersistenceEvent,
@@ -28,6 +31,10 @@ from .types import (
 
 def _now_ms() -> int:
     return int(time() * 1000)
+
+
+def _make_session_id() -> str:
+    return f"session_{_now_ms()}_{uuid4().hex[:8]}"
 
 
 T = TypeVar("T")
@@ -115,14 +122,15 @@ def _apply_change_to_snapshot(snapshot: SessionSnapshot, change: PersistedChange
             context.drips.pop(change.grip_id, None)
 
 
-class InMemoryGripSessionStore(GripSessionStore):
+class InMemoryGripSessionStore(GripSessionStore, LauncherSessionRecordStore):
     """Reference in-memory session store used by tests and early integration."""
 
     def __init__(self) -> None:
         self._sessions: dict[str, _SessionRecord] = {}
+        self._launcher_sessions: dict[str, LauncherSessionRecord] = {}
 
     def new_session(self, request: NewSessionRequest) -> SessionSummary:
-        session_id = request.session_id or f"session_{_now_ms()}"
+        session_id = request.session_id or _make_session_id()
         summary = SessionSummary(
             session_id=session_id,
             title=request.title,
@@ -145,6 +153,23 @@ class InMemoryGripSessionStore(GripSessionStore):
     def get_session(self, session_id: str) -> SessionSummary | None:
         record = self._sessions.get(session_id)
         return _clone(record.summary) if record is not None else None
+
+    def list_launcher_sessions(self) -> list[LauncherSessionRecord]:
+        return sorted(
+            (_clone(record) for record in self._launcher_sessions.values()),
+            key=lambda entry: entry.last_opened_ms,
+            reverse=True,
+        )
+
+    def get_launcher_session(self, launcher_session_id: str) -> LauncherSessionRecord | None:
+        record = self._launcher_sessions.get(launcher_session_id)
+        return _clone(record) if record is not None else None
+
+    def put_launcher_session(self, record: LauncherSessionRecord) -> None:
+        self._launcher_sessions[record.launcher_session_id] = _clone(record)
+
+    def remove_launcher_session(self, launcher_session_id: str) -> None:
+        self._launcher_sessions.pop(launcher_session_id, None)
 
     def hydrate(self, session_id: str) -> HydratedSession:
         record = self._require_session(session_id)

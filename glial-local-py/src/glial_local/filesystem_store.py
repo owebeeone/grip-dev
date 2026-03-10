@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from copy import deepcopy
 from dataclasses import asdict
 from pathlib import Path
+from threading import RLock
+from uuid import uuid4
 
 from .in_memory import _apply_change_to_snapshot, _create_empty_snapshot, _now_ms
 from .types import (
@@ -13,6 +17,8 @@ from .types import (
     DripState,
     GripSessionStore,
     HydratedSession,
+    LauncherSessionRecord,
+    LauncherSessionRecordStore,
     NewSessionRequest,
     PersistedChange,
     RemoveSessionRequest,
@@ -22,6 +28,10 @@ from .types import (
     TapExport,
     VirtualClock,
 )
+
+
+def _make_session_id() -> str:
+    return f"session_{_now_ms()}_{uuid4().hex[:8]}"
 
 
 def _clock_from_dict(data: dict | None) -> VirtualClock | None:
@@ -76,6 +86,16 @@ def _summary_from_dict(data: dict) -> SessionSummary:
     )
 
 
+def _launcher_session_from_dict(data: dict) -> LauncherSessionRecord:
+    return LauncherSessionRecord(
+        launcher_session_id=data["launcher_session_id"],
+        glial_session_id=data["glial_session_id"],
+        title=data.get("title"),
+        storage_mode=data["storage_mode"],
+        last_opened_ms=data["last_opened_ms"],
+    )
+
+
 def _change_from_dict(data: dict) -> PersistedChange:
     return PersistedChange(
         change_id=data["change_id"],
@@ -103,15 +123,16 @@ def _checkpoint_from_dict(data: dict) -> SyncCheckpoint:
     )
 
 
-class FilesystemGripSessionStore(GripSessionStore):
+class FilesystemGripSessionStore(GripSessionStore, LauncherSessionRecordStore):
     """Simple JSON-file-backed session store."""
 
     def __init__(self, base_path: str | Path) -> None:
         self._base_path = Path(base_path)
         self._base_path.mkdir(parents=True, exist_ok=True)
+        self._lock = RLock()
 
     def new_session(self, request: NewSessionRequest) -> SessionSummary:
-        session_id = request.session_id or f"session_{_now_ms()}"
+        session_id = request.session_id or _make_session_id()
         summary = SessionSummary(
             session_id=session_id,
             title=request.title,
@@ -130,8 +151,15 @@ class FilesystemGripSessionStore(GripSessionStore):
 
     def list_sessions(self) -> list[SessionSummary]:
         summaries: list[SessionSummary] = []
-        for session_dir in self._base_path.iterdir():
+        with self._lock:
+            session_dirs = tuple(self._base_path.iterdir())
+        for session_dir in session_dirs:
             if not session_dir.is_dir():
+                continue
+            if session_dir.name.startswith("_"):
+                continue
+            record_path = session_dir / "session.json"
+            if not record_path.exists():
                 continue
             record = self._read_record(session_dir.name)
             summaries.append(_summary_from_dict(record["summary"]))
@@ -142,6 +170,40 @@ class FilesystemGripSessionStore(GripSessionStore):
         if record is None:
             return None
         return _summary_from_dict(record["summary"])
+
+    def list_launcher_sessions(self) -> list[LauncherSessionRecord]:
+        launcher_path = self._launcher_sessions_dir()
+        if not launcher_path.exists():
+            return []
+        records: list[LauncherSessionRecord] = []
+        with self._lock:
+            record_paths = tuple(launcher_path.glob("*.json"))
+        for record_path in record_paths:
+            with self._lock:
+                payload = json.loads(record_path.read_text())
+            records.append(_launcher_session_from_dict(payload))
+        return sorted(records, key=lambda entry: entry.last_opened_ms, reverse=True)
+
+    def get_launcher_session(self, launcher_session_id: str) -> LauncherSessionRecord | None:
+        path = self._launcher_session_path(launcher_session_id)
+        if not path.exists():
+            return None
+        with self._lock:
+            return _launcher_session_from_dict(json.loads(path.read_text()))
+
+    def put_launcher_session(self, record: LauncherSessionRecord) -> None:
+        launcher_dir = self._launcher_sessions_dir()
+        launcher_dir.mkdir(parents=True, exist_ok=True)
+        self._write_json_atomic(
+            self._launcher_session_path(record.launcher_session_id),
+            asdict(record),
+        )
+
+    def remove_launcher_session(self, launcher_session_id: str) -> None:
+        path = self._launcher_session_path(launcher_session_id)
+        with self._lock:
+            if path.exists():
+                path.unlink()
 
     def hydrate(self, session_id: str) -> HydratedSession:
         record = self._read_record(session_id)
@@ -191,11 +253,12 @@ class FilesystemGripSessionStore(GripSessionStore):
 
     def remove_session(self, request: RemoveSessionRequest) -> None:
         session_dir = self._session_dir(request.session_id)
-        if not session_dir.exists():
-            return
-        for child in session_dir.iterdir():
-            child.unlink()
-        session_dir.rmdir()
+        with self._lock:
+            if not session_dir.exists():
+                return
+            for child in session_dir.iterdir():
+                child.unlink()
+            session_dir.rmdir()
 
     def _record_path(self, session_id: str) -> Path:
         return self._session_dir(session_id) / "session.json"
@@ -203,15 +266,44 @@ class FilesystemGripSessionStore(GripSessionStore):
     def _session_dir(self, session_id: str) -> Path:
         return self._base_path / session_id
 
+    def _launcher_sessions_dir(self) -> Path:
+        return self._base_path / "_launcher_sessions"
+
+    def _launcher_session_path(self, launcher_session_id: str) -> Path:
+        return self._launcher_sessions_dir() / f"{launcher_session_id}.json"
+
     def _read_record(self, session_id: str, required: bool = True) -> dict | None:
         path = self._record_path(session_id)
-        if not path.exists():
-            if required:
-                raise KeyError(f"unknown session: {session_id}")
-            return None
-        return json.loads(path.read_text())
+        with self._lock:
+            if not path.exists():
+                if required:
+                    raise KeyError(f"unknown session: {session_id}")
+                return None
+            return json.loads(path.read_text())
 
     def _write_record(self, session_id: str, record: dict) -> None:
         session_dir = self._session_dir(session_id)
-        session_dir.mkdir(parents=True, exist_ok=True)
-        self._record_path(session_id).write_text(json.dumps(record, indent=2, sort_keys=True))
+        with self._lock:
+            session_dir.mkdir(parents=True, exist_ok=True)
+        self._write_json_atomic(self._record_path(session_id), record)
+
+    def _write_json_atomic(self, path: Path, payload: dict) -> None:
+        with self._lock:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            fd, temp_name = tempfile.mkstemp(
+                dir=path.parent,
+                prefix=f"{path.name}.",
+                suffix=".tmp",
+                text=True,
+            )
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as temp_file:
+                    json.dump(payload, temp_file, indent=2, sort_keys=True)
+                    temp_file.flush()
+                    os.fsync(temp_file.fileno())
+                os.replace(temp_name, path)
+            finally:
+                try:
+                    os.unlink(temp_name)
+                except FileNotFoundError:
+                    pass

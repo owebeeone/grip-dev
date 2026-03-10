@@ -6,6 +6,11 @@ from .in_memory import (
     InMemoryGripSessionStore,
     NullGripSessionLink,
 )
+from .session_browser import (
+    bind_launcher_session_to_existing_session,
+    create_launcher_session_id,
+    ensure_launcher_session_record,
+)
 from .types import (
     ChangeSource,
     ChangeStatus,
@@ -16,6 +21,9 @@ from .types import (
     GripSessionPersistence,
     GripSessionStore,
     HydratedSession,
+    LauncherSessionRecord,
+    LauncherSessionRecordStore,
+    LauncherSessionStorageMode,
     NewSessionRequest,
     PersistedChange,
     PersistenceEvent,
@@ -45,6 +53,9 @@ __all__ = [
     "HydratedSession",
     "InMemoryGripSessionPersistence",
     "InMemoryGripSessionStore",
+    "LauncherSessionRecord",
+    "LauncherSessionRecordStore",
+    "LauncherSessionStorageMode",
     "NewSessionRequest",
     "NullGripSessionLink",
     "PersistedChange",
@@ -60,4 +71,7 @@ __all__ = [
     "TapExecutionRole",
     "TapExport",
     "VirtualClock",
+    "bind_launcher_session_to_existing_session",
+    "create_launcher_session_id",
+    "ensure_launcher_session_record",
 ]

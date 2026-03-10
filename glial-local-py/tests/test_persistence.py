@@ -1,7 +1,11 @@
 from glial_local import (
+    bind_launcher_session_to_existing_session,
     ContextState,
+    create_launcher_session_id,
     EnableSharingRequest,
+    ensure_launcher_session_record,
     InMemoryGripSessionPersistence,
+    InMemoryGripSessionStore,
     NewSessionRequest,
     PersistedChange,
     RemoveSessionRequest,
@@ -94,3 +98,29 @@ def test_in_memory_persistence_emits_delta_and_sharing_events() -> None:
 
     assert "delta" in events
     assert "sharing_state" in events
+
+
+def test_in_memory_store_tracks_launcher_session_records() -> None:
+    store = InMemoryGripSessionStore()
+    launcher_session_id = create_launcher_session_id("test")
+
+    initial = ensure_launcher_session_record(
+        store,
+        launcher_session_id,
+        title="Initial session",
+        storage_mode="local",
+    )
+    listed = store.list_launcher_sessions()
+    assert len(listed) == 1
+    assert listed[0].launcher_session_id == launcher_session_id
+    assert listed[0].glial_session_id == initial.glial_session_id
+
+    replacement = store.new_session(NewSessionRequest(title="Replacement session"))
+    rebound = bind_launcher_session_to_existing_session(
+        store,
+        launcher_session_id,
+        replacement,
+        "local",
+    )
+    assert rebound.glial_session_id == replacement.session_id
+    assert store.get_launcher_session(launcher_session_id).glial_session_id == replacement.session_id

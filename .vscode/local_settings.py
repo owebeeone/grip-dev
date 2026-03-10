@@ -2,7 +2,10 @@
 from pathlib import Path
 WORKSPACE = '/Users/owebeeone/limbo/grip-dev' if Path.cwd().parts[-1] != 'grip-dev' else str(Path.cwd())
 PYTHONPATH = (
-    f'{WORKSPACE}/grip-py/src'
+    f'{WORKSPACE}/glial-local-py/src'
+    ':' f'{WORKSPACE}/glial-net-py/src'
+    ':' f'{WORKSPACE}/glial-router-py/src'
+    ':' f'{WORKSPACE}/grip-py/src'
     ':' f'{WORKSPACE}/grip-py-demo/src'
 )
 if __name__ == '__main__':

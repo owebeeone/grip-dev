@@ -595,3 +595,155 @@ It owns:
 - sequence and checkpoint semantics
 
 It does not own concrete Grip runtime objects.
+
+---
+
+## Resolution 032: Inbound persisted changes bypass the local dirty queue
+
+Status: Accepted
+
+The Grok dirty queue exists for locally originated runtime mutations.
+
+Glial-sourced deltas and local hydrate restore use a separate persisted-apply path.
+
+This means:
+
+- inbound Glial changes are written into the local durable store as they are accepted
+- inbound Glial changes are then applied directly into the runtime
+- inbound Glial apply runs under dirty-queue suppression
+- hydrate restore also bypasses dirty enqueue
+- Glial-sourced applies do not allocate new local `origin_mutation_seq` values
+- Glial-sourced applies must not be republished as locally originated outbound changes
+
+The normalized persisted change shape is shared. The enqueue path is not.
+
+---
+
+## Resolution 033: Persisted taps are reified through a local materialization registry
+
+Status: Accepted
+
+Persisted tap metadata does not contain executable code.
+
+When a runtime reconstructs graph state from persisted data, tap records must be materialized through a local tap or tap-factory registry.
+
+Possible outcomes:
+
+- create a real executable local tap when the runtime has a matching implementation and local policy allows execution
+- create a passive tap when the runtime is follower-only, headless, or lacks a local executable implementation
+
+Passive taps are allowed in v1.
+
+They preserve:
+
+- graph shape
+- tap identity
+- provided grip structure
+- execution metadata
+
+but do not execute local tap logic.
+
+---
+
+## Resolution 034: Backup restore and live shared projection are distinct persistence products
+
+Status: Accepted
+
+Glial v1 distinguishes between:
+
+- source-state backup snapshots used to restore a capable runtime with real application tap code
+- full shared-state projection used for Glial-routed sharing, follower replicas, and headless replicas
+
+This means:
+
+- local and remote backup restore do not need to generically persist every function or async output
+- headed follower and headless replicas do need the full current shared graph state
+- one persistence model exists, but it is projected differently for backup versus live sharing
+
+---
+
+## Resolution 035: Browser session identity is separate from logical Glial session identity
+
+Status: Accepted
+
+V1 uses:
+
+- `browser_session_id` for the browser-local reload record
+- `glial_session_id` for the logical persisted or shared session
+- `replica_id` for one live shared participant
+
+This means:
+
+- the browser session record survives reload and points to the current `glial_session_id`
+- local backup, remote backup, and Glial routing all key logical session data by `glial_session_id`
+- a new `glial_session_id` is created when the browser session has not yet been associated with one
+
+---
+
+## Resolution 036: Remote backup uses an authenticated Glial state storage adapter
+
+Status: Accepted
+
+Remote backup is not the same thing as the live Glial delta link.
+
+V1 therefore includes a server-side Glial state storage adapter keyed by:
+
+- authenticated user identity or trusted claims from the host framework
+- `glial_session_id`
+
+This adapter owns:
+
+- remote session catalog
+- remote session load
+- remote source-state backup storage
+
+---
+
+## Resolution 037: Async cache persistence is optional and tap-specific
+
+Status: Accepted
+
+Glial v1 does not require generic async cache save or restore.
+
+Rules:
+
+- async taps may explicitly export cache state when it is JSON-safe and useful
+- otherwise backup restore simply causes async taps to refetch or rerun after source-state hydrate
+- followers and headless replicas rely on shared projected outputs rather than on async cache restore
+
+---
+
+## Resolution 038: Headless and follower replicas hydrate passive shared projection, not app code
+
+Status: Accepted
+
+Headless and follower replicas should not be expected to reconstruct a session by rerunning application taps locally.
+
+Instead they:
+
+- materialize passive taps from shared-state projection
+- receive current shared drip values from Glial
+- remain non-executing by default
+- may request negotiated-primary takeover when policy allows
+
+This is the basis for AI-readable hydrated graphs and tool-driven primary takeover.
+
+---
+
+## Resolution 039: Runtime session attachment uses generic projectors, not hard-coded local/shared APIs
+
+Status: Accepted
+
+The runtime should attach one or more session projectors rather than expose separate special-case APIs for local persistence and shared projection.
+
+Projectors declare their kind and capabilities, such as:
+
+- `source-backup`
+- `shared-projection`
+- `mirror`
+
+This means:
+
+- `both` mode is naturally represented by multiple attached projectors
+- future Glial bridge or debug mirror modes fit the same runtime contract
+- the semantic distinction between backup and shared projection is preserved by projector capability metadata rather than by separate hard-coded top-level APIs

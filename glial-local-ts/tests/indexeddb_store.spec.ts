@@ -1,7 +1,12 @@
 import "fake-indexeddb/auto";
 
 import { describe, expect, it } from "vitest";
-import { IndexedDbGripSessionStore } from "../src";
+import {
+  bindBrowserSessionToExistingSession,
+  createBrowserSessionId,
+  ensureBrowserSessionRecord,
+  IndexedDbGripSessionStore,
+} from "../src";
 
 describe("IndexedDbGripSessionStore", () => {
   it("persists sessions across store instances and supports collapse", async () => {
@@ -52,5 +57,25 @@ describe("IndexedDbGripSessionStore", () => {
 
     await reloadedStore.removeSession({ session_id: "session-a", scope: "local_only" });
     expect(await reloadedStore.getSession("session-a")).toBeNull();
+  });
+
+  it("persists browser session records across store instances", async () => {
+    const databaseName = `glial-local-browser-test-${Date.now()}`;
+    const store = new IndexedDbGripSessionStore({ databaseName });
+    const browserSessionId = createBrowserSessionId("indexeddb");
+
+    const initial = await ensureBrowserSessionRecord(store, browserSessionId, {
+      title: "Initial browser session",
+      storageMode: "local",
+    });
+    const secondSession = await store.newSession({ title: "Second session" });
+    await bindBrowserSessionToExistingSession(store, browserSessionId, secondSession, "local");
+
+    const reloadedStore = new IndexedDbGripSessionStore({ databaseName });
+    const listed = await reloadedStore.listBrowserSessions();
+    expect(listed).toHaveLength(1);
+    expect(listed[0]?.browser_session_id).toBe(browserSessionId);
+    expect(listed[0]?.glial_session_id).toBe(secondSession.session_id);
+    expect(listed[0]?.glial_session_id).not.toBe(initial.glial_session_id);
   });
 });

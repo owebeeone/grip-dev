@@ -20,17 +20,32 @@ It owns the canonical persisted session model, including:
 - local sequence metadata such as `origin_generation` and `origin_mutation_seq`
 - authoritative Glial session clocks when a session is shared
 
+In the normalized v1 payloads shown below, the field name may remain `session_id`.
+
+Semantically that `session_id` is the logical `glial_session_id` described in Section 04.
+
 V1 therefore defines one interface family:
 
 - `GripSessionPersistence`: engine-facing coordinator interface
 - `GripSessionStore`: mandatory durable local store
 - `GripSessionLink`: optional live shared-session link, normally Glial
+- `GripProjector`: runtime projection attachment used to observe and/or apply session state
 
 This means:
 
 - local-only browser persistence uses a local store and no link
 - local-only Python persistence uses a local store and no link
 - a shared session uses the same local store plus a Glial link
+- the runtime may attach multiple projectors at once, for example local backup plus live shared projection
+
+The browser also owns a separate browser-local session record.
+
+That browser-local record maps:
+
+- `browser_session_id`
+- `glial_session_id`
+- storage policy such as local, remote, or both
+- whether the session should attach to Glial routing on load
 
 Glial is not the only persistence implementation.
 
@@ -56,6 +71,109 @@ The link is responsible for:
 - maintaining Glial sync status
 
 Trying to force Glial to pretend to be the only storage backend would make local-only persistence harder and would blur the authority boundary.
+
+## Projector Model
+
+The runtime should not hard-code separate top-level APIs such as:
+
+- `attachLocalPersistence(...)`
+- `attachSharedProjection(...)`
+
+Instead, v1 should use a generic projector attachment model.
+
+A projector is a runtime-facing integration object that declares:
+
+- what kind of session projection it owns
+- whether it consumes outbound local changes
+- whether it can hydrate source-state backup
+- whether it can apply inbound shared-state projection
+- whether it exposes session catalog or browsing capabilities
+
+This keeps the runtime integration generic while preserving explicit semantic distinctions between backup and shared projection.
+
+### Projector Kinds
+
+Recommended v1 projector kinds:
+
+- `source-backup`
+- `shared-projection`
+- `mirror`
+
+Examples:
+
+- local-only browser restore uses one `source-backup` projector backed by IndexedDB
+- a shared browser session may attach both a local `source-backup` projector and a remote `shared-projection` projector
+- a debug session may attach an additional `mirror` projector
+
+### Why Multiple Projectors Matter
+
+Multiple projector attachment is desirable because:
+
+- `both` mode naturally means local backup plus shared projection
+- future debugging may want a second mirror or bridge projector
+- future Glial bridge work may need one runtime to observe and relay between multiple Glial servers
+
+The runtime should therefore support:
+
+- `attachProjector(projector)`
+- `detachProjector(id)`
+- `listProjectors()`
+
+rather than a pair of special-case attach methods.
+
+The semantic distinction between source backup and shared projection remains important. It is represented by projector capabilities, not by separate hard-coded runtime entry points.
+
+## Session Modes And Storage Policy
+
+V1 needs three user-facing storage policies:
+
+- `local`
+- `remote`
+- `both`
+
+And two execution attachment states:
+
+- detached
+- Glial-routed
+
+Rules:
+
+- `local` means browser or process backup exists locally and reload restore uses it
+- `remote` means the logical session is also backed by an authenticated remote state store keyed by `glial_session_id`
+- `both` means both local backup and remote backup are maintained
+- loading a remote session in the browser should, by default, attach it as a Glial-routed session rather than as a detached copy
+
+## Backup Snapshot Versus Shared Projection
+
+The persistence coordinator must support two persistence products:
+
+- source-state backup snapshots for restore on capable headed runtimes
+- full shared-state projection for Glial-routed sessions and headless followers
+
+Rules:
+
+- local backup and remote backup normally store source-state snapshots
+- Glial live sharing uses the shared-state projection
+- a local durable store may keep both the local source-state backup and a mirrored copy of the latest shared-state projection for debugging or reconnect
+
+## Remote State Store Adapter
+
+Remote backup is not the same thing as the live Glial delta link.
+
+V1 therefore permits a Glial state storage adapter on the server side.
+
+That adapter is keyed by:
+
+- authenticated user identity or trusted claims from the host framework
+- `glial_session_id`
+
+The adapter is responsible for:
+
+- remote session catalog
+- remote snapshot storage
+- loading a remote backup session by logical session id
+
+The adapter is intentionally outside Glial authentication itself. Glial receives already-authenticated identity from the host environment.
 
 ## Engine-Facing Contract
 
@@ -147,6 +265,25 @@ interface GripSessionPersistence {
 }
 ```
 
+### Projector Interface
+
+Language-neutral shape:
+
+```typescript
+type ProjectorKind = "source-backup" | "shared-projection" | "mirror";
+
+interface GripProjector {
+  projector_id: string;
+  projector_kind: ProjectorKind;
+  consumes_local_changes: boolean;
+  supports_hydrate: boolean;
+  supports_inbound_apply: boolean;
+  supports_session_catalog?: boolean;
+}
+```
+
+The concrete backup store and Glial link implementations may still exist underneath, but the runtime attaches projectors rather than calling storage-specific top-level entry points.
+
 ## Runtime Change Capture Model
 
 The runtime must not attempt to persist directly from arbitrary low-level callbacks.
@@ -163,6 +300,10 @@ The changed facility is responsible for:
 The changed facility should enqueue dirty entity references, not fully materialized persisted records.
 
 That allows the persistence layer to reread the current graph after the runtime has quiesced and persist the stable final state rather than transient intermediate states.
+
+The local dirty queue is only for locally originated runtime mutations.
+
+Glial-sourced deltas and local hydrate restore do not enter the dirty queue. They use a persisted-apply path described below.
 
 ### Dirty Entity Kinds
 
@@ -197,7 +338,7 @@ This design means:
 - repeated changes to the same entity before the flush are coalesced
 - child order changes persist the final order only
 - persistence observes a stable post-propagation graph rather than intermediate states
-- Glial-sourced updates and local updates use the same local persistence path once normalized
+- Glial-sourced updates and local updates use the same normalized persisted change shape, but not the same enqueue path
 
 ### Remove Semantics During Delayed Flush
 
@@ -232,6 +373,114 @@ That keeps:
 - future alternative persistence backends
 
 on the same normalized runtime change feed.
+
+## Debug Session Browser
+
+V1 must include a debug or developer-facing session browser similar in spirit to the graph dump tooling.
+
+The session browser should allow:
+
+- listing locally stored sessions
+- listing remotely stored sessions available to the authenticated user
+- loading a selected local session into the current browser runtime
+- loading a selected remote session into the current browser runtime
+- showing whether the loaded session is local-only, remote-backed, or Glial-routed
+
+Loading a remote session should by default attach the browser to Glial routing for that `glial_session_id`.
+
+## Runtime Apply Paths
+
+V1 uses three distinct persistence-related runtime paths.
+
+### 1. Local Mutation Observation Path
+
+This is the normal path for UI interaction and local runtime behavior.
+
+Flow:
+
+1. the runtime mutates local graph state
+2. the changed facility marks the affected nodes dirty
+3. a delayed flush rereads current graph state
+4. the flush emits normalized `PersistedChange` records
+5. those records are written to the local store
+6. if sharing is enabled, locally originated shared records are also published to Glial
+
+This is the only path that uses the Grok dirty queue.
+
+### 2. Inbound Persisted-Apply Path
+
+This path is used for Glial-sourced deltas and Glial snapshot or replay application.
+
+Flow:
+
+1. the client receives normalized `PersistedChange` records or a snapshot from Glial
+2. the client writes those records into the local durable store as they are accepted
+3. the runtime applies those normalized records directly to graph state
+4. the runtime performs that apply under dirty-queue suppression
+
+Rules:
+
+- inbound Glial changes bypass the local dirty queue
+- inbound Glial changes do not allocate a new local `origin_mutation_seq`
+- inbound Glial changes must not be republished as locally originated outbound changes
+- local persistence should reflect inbound Glial records as they arrive, not wait for a later local flush
+
+### 3. Local Hydrate Apply Path
+
+This path is used for browser reload restore or local process restart restore.
+
+Flow:
+
+1. the runtime hydrates from the local durable snapshot and retained journal
+2. the hydrated state is applied directly into the runtime
+3. that apply runs under the same dirty-queue suppression used for inbound Glial changes
+
+Rules:
+
+- hydrate restore does not enqueue dirty nodes
+- hydrate restore does not publish to Glial
+- hydrate restore does not allocate new local sequence numbers
+
+## Persisted Apply Operations
+
+To support inbound Glial application and local hydrate restore, the runtime must expose normalized apply operations for each persisted node kind.
+
+V1 requires runtime support for:
+
+- `apply_context_upsert`
+- `apply_context_remove`
+- `apply_child_order`
+- `apply_drip_upsert_or_value`
+- `apply_drip_remove`
+- `apply_tap_meta`
+- `apply_tap_remove`
+
+These operations are runtime-internal apply primitives. They are not a backend-specific storage API.
+
+They must run under an apply context that suppresses dirty-state enqueue.
+
+## Local Store Handling For Local And Glial Changes
+
+The local durable store sees one normalized change model, but two main origins.
+
+### Local-Origin Changes
+
+Local-origin changes are emitted by the dirty-state flush.
+
+Rules:
+
+- local-only sessions write them as locally applied changes
+- shared sessions may retain them as pending until Glial confirms or supersedes them
+
+### Glial-Origin Changes
+
+Glial-origin changes arrive already normalized.
+
+Rules:
+
+- they are written into the local store as they are accepted by the client
+- they are then applied into the runtime through the persisted-apply path
+- if they correspond to a previously pending local change, the local persistence layer should confirm, replace, or supersede that pending local record rather than duplicating both indefinitely
 
 ## Required Operation Semantics
 
@@ -278,9 +527,10 @@ Writes one normalized change into the local persistence system and updates the m
 
 Rules:
 
-- the runtime calls this for local changes it has already decided to apply
+- the runtime calls this for local changes emitted by the dirty flush after it has already decided to apply them
 - the persistence layer also uses the same normalized change shape internally for Glial-sourced changes
 - one change write must be atomic with respect to the local materialized session state
+- Glial-sourced writes should be recorded as they are accepted by the client rather than waiting for a later local dirty flush
 
 ### `replaceSnapshot`
 

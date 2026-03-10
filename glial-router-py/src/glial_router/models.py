@@ -51,3 +51,21 @@ class ReplayResponse(BaseModel):
     session_id: str
     changes: list[PersistedChangeModel] = Field(default_factory=list)
     last_clock: VirtualClockModel
+
+
+class RemoteSessionSummaryModel(BaseModel):
+    session_id: str
+    title: str | None = None
+    last_modified_ms: int
+
+
+class RemoteSessionLoadResponse(BaseModel):
+    session_id: str
+    title: str | None = None
+    snapshot: dict[str, Any]
+    last_modified_ms: int
+
+
+class UpsertRemoteSessionRequest(BaseModel):
+    title: str | None = None
+    snapshot: dict[str, Any]

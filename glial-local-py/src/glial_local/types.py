@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol, TypeAlias
 
 SessionMode: TypeAlias = Literal["local", "shared"]
+LauncherSessionStorageMode: TypeAlias = Literal["local", "remote", "both"]
 ChangeSource: TypeAlias = Literal["local", "glial", "hydrate", "collapse"]
 ChangeStatus: TypeAlias = Literal["applied", "pending_sync", "confirmed", "superseded"]
 PersistenceTargetKind: TypeAlias = Literal["context", "child-order", "drip", "tap-meta", "remove"]
@@ -73,6 +74,15 @@ class SessionSummary:
     mode: SessionMode
     last_modified_ms: int
     last_glial_session_clock: VirtualClock | None = None
+
+
+@dataclass(slots=True)
+class LauncherSessionRecord:
+    launcher_session_id: str
+    glial_session_id: str
+    title: str | None
+    storage_mode: LauncherSessionStorageMode
+    last_opened_ms: int
 
 
 @dataclass(slots=True)
@@ -172,6 +182,13 @@ class GripSessionStore(Protocol):
     ) -> None: ...
     def collapse(self, session_id: str) -> None: ...
     def remove_session(self, request: RemoveSessionRequest) -> None: ...
+
+
+class LauncherSessionRecordStore(Protocol):
+    def list_launcher_sessions(self) -> list[LauncherSessionRecord]: ...
+    def get_launcher_session(self, launcher_session_id: str) -> LauncherSessionRecord | None: ...
+    def put_launcher_session(self, record: LauncherSessionRecord) -> None: ...
+    def remove_launcher_session(self, launcher_session_id: str) -> None: ...
 
 
 class GripSessionLink(Protocol):

@@ -1,4 +1,5 @@
 export type SessionMode = "local" | "shared";
+export type BrowserSessionStorageMode = "local" | "remote" | "both";
 export type ChangeSource = "local" | "glial" | "hydrate" | "collapse";
 export type ChangeStatus = "applied" | "pending_sync" | "confirmed" | "superseded";
 export type PersistenceTargetKind = "context" | "child-order" | "drip" | "tap-meta" | "remove";
@@ -57,6 +58,14 @@ export interface SessionSummary {
   mode: SessionMode;
   last_modified_ms: number;
   last_glial_session_clock?: VirtualClock;
+}
+
+export interface BrowserSessionRecord {
+  browser_session_id: string;
+  glial_session_id: string;
+  title?: string;
+  storage_mode: BrowserSessionStorageMode;
+  last_opened_ms: number;
 }
 
 export interface SyncCheckpoint {
@@ -144,6 +153,13 @@ export interface GripSessionStore {
   ): Promise<void>;
   collapse(session_id: string): Promise<void>;
   removeSession(request: RemoveSessionRequest): Promise<void>;
+}
+
+export interface BrowserSessionRecordStore {
+  listBrowserSessions(): Promise<BrowserSessionRecord[]>;
+  getBrowserSession(browser_session_id: string): Promise<BrowserSessionRecord | null>;
+  putBrowserSession(record: BrowserSessionRecord): Promise<void>;
+  removeBrowserSession(browser_session_id: string): Promise<void>;
 }
 
 export interface GripSessionLink {

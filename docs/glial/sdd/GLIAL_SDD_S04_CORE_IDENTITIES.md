@@ -1,19 +1,37 @@
 # Glial SDD Section 04: Core Identities
 
-## Session Identity
+## Browser Session Identity
 
-`session_id` is the top-level persisted identity for a session in v1.
+`browser_session_id` is a browser-local durable selector that survives page reload.
+
+Rules:
+
+- `browser_session_id` is local to one browser storage domain
+- it is not used for Glial routing
+- it points to the currently loaded logical Glial session and browser storage policy
+- reloading the page should preserve the same `browser_session_id`
+
+The browser session record maps:
+
+- `browser_session_id -> glial_session_id`
+- storage mode such as local, remote, or both
+- whether the current browser instance should attach to Glial routing
+
+## Glial Session Identity
+
+`glial_session_id` is the top-level logical session identity for persistence, backup, routing, and sharing.
 
 Rules:
 
 - a local-only session may exist with one runtime replica and no Glial attachment
-- all cooperating replicas in a shared session use the same `session_id`
+- all cooperating replicas in a shared session use the same `glial_session_id`
+- local backup and remote backup both key their logical session data by `glial_session_id`
 - when attached to Glial, one session is owned by exactly one shard at a time
-- all authoritative clocks, leases, snapshots, and replay streams in Glial are scoped by `session_id`
+- all authoritative clocks, leases, snapshots, and replay streams in Glial are scoped by `glial_session_id`
 
 ## Replica Identity
 
-`replica_id` identifies one concrete participant inside a session.
+`replica_id` identifies one concrete participant inside a Glial session.
 
 Rules:
 

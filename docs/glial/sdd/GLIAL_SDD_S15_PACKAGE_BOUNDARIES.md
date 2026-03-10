@@ -37,6 +37,7 @@ They must define:
 - `GripSessionPersistence`
 - `GripSessionStore`
 - `GripSessionLink` interface types
+- `GripProjector` interface types
 - in-memory or reference implementations that do not require Glial networking
 
 They must not depend on:
@@ -62,6 +63,7 @@ They must:
 
 - depend on `glial-local-*`
 - implement the `GripSessionLink` contract
+- implement `GripProjector` for shared projection attachment
 - implement snapshot, replay, resync, and live delta handling
 - implement Glial clock, lease, and protocol message handling needed by clients
 
@@ -83,6 +85,7 @@ It should implement:
 - authoritative clock assignment
 - snapshot and replay serving
 - lease and presence handling
+- authenticated remote state storage adapters for backup and session catalog access
 
 It depends on:
 
@@ -133,14 +136,22 @@ So `glial-local-*` must own the canonical session semantics, while still remaini
 
 - runtime graph behavior
 - concrete drip, tap, and context execution
-- translating runtime changes into normalized persisted changes
-- applying normalized persisted changes back into runtime state
+- attaching one or more projectors to the runtime
+- translating runtime changes into normalized persisted changes or projector events
+- applying normalized persisted or projected changes back into runtime state
+- tap materialization registries for reconstructing persisted tap records into either real local taps or passive taps
 
 They should not own:
 
 - transport message protocols
 - server routing logic
 - storage-specific catalog or session checkpoint semantics
+
+Applications and demo tooling may add thin UI or CLI layers on top of these packages for:
+
+- local session browsing
+- remote session browsing
+- session load or attach actions
 
 ## Local Storage Implementations
 

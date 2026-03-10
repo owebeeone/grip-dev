@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  bindBrowserSessionToExistingSession,
+  createBrowserSessionId,
+  ensureBrowserSessionRecord,
   InMemoryGripSessionPersistence,
+  InMemoryGripSessionStore,
   type PersistedChange,
   type SessionSnapshot,
 } from "../src";
@@ -94,5 +98,32 @@ describe("InMemoryGripSessionPersistence", () => {
 
     expect(events).toContain("delta");
     expect(events).toContain("sharing_state");
+  });
+
+  it("stores browser session records alongside logical sessions", async () => {
+    const store = new InMemoryGripSessionStore();
+    const browserSessionId = createBrowserSessionId("test");
+
+    const initial = await ensureBrowserSessionRecord(store, browserSessionId, {
+      title: "Initial session",
+      storageMode: "local",
+    });
+    const listed = await store.listBrowserSessions();
+
+    expect(listed).toHaveLength(1);
+    expect(listed[0]?.browser_session_id).toBe(browserSessionId);
+    expect(listed[0]?.glial_session_id).toBe(initial.glial_session_id);
+
+    const session = await store.newSession({ title: "Replacement session" });
+    const rebound = await bindBrowserSessionToExistingSession(
+      store,
+      browserSessionId,
+      session,
+      "local",
+    );
+    expect(rebound.glial_session_id).toBe(session.session_id);
+    expect((await store.getBrowserSession(browserSessionId))?.glial_session_id).toBe(
+      session.session_id,
+    );
   });
 });
