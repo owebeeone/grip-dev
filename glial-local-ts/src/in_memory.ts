@@ -1,4 +1,4 @@
-import {
+import type {
   ContextState,
   EnableSharingRequest,
   GripSessionLink,
@@ -229,10 +229,16 @@ export class NullGripSessionLink implements GripSessionLink {
 }
 
 export class InMemoryGripSessionPersistence implements GripSessionPersistence {
+  private readonly store: InMemoryGripSessionStore;
+  private readonly link: GripSessionLink;
+
   constructor(
-    private readonly store: InMemoryGripSessionStore = new InMemoryGripSessionStore(),
-    private readonly link: GripSessionLink = new NullGripSessionLink(),
-  ) {}
+    store: InMemoryGripSessionStore = new InMemoryGripSessionStore(),
+    link: GripSessionLink = new NullGripSessionLink(),
+  ) {
+    this.store = store;
+    this.link = link;
+  }
 
   async newSession(request: NewSessionRequest): Promise<SessionSummary> {
     return this.store.newSession(request);

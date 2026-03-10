@@ -1,4 +1,4 @@
-import {
+import type {
   GripSessionStore,
   HydratedSession,
   NewSessionRequest,
@@ -42,7 +42,7 @@ function applyChangeToSnapshot(snapshot: SessionSnapshot, change: PersistedChang
   if (change.target_kind === "context") {
     if (change.payload) {
       snapshot.contexts[path] = {
-        ...(change.payload as SessionSnapshot["contexts"][string]),
+        ...((change.payload as unknown) as SessionSnapshot["contexts"][string]),
         path,
       };
     }
