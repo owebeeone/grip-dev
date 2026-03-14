@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useGrip } from '@owebeeone/grip-react'
 import { HttpGlialClient } from '@owebeeone/glial-net'
 import {
+  hydrateViewerSharedSession,
+  selectViewerSession,
   VIEWER_CONTEXTS,
   VIEWER_ERROR,
   VIEWER_LEASES,
@@ -11,6 +13,7 @@ import {
   loadViewerSession,
   refreshViewerSessions,
   requestViewerLease,
+  setViewerError,
   updateViewerSharedValue,
 } from './viewer_runtime'
 
@@ -30,16 +33,28 @@ export default function App(props: ViewerAppProps) {
   const [gripId, setGripId] = useState('')
   const [jsonValue, setJsonValue] = useState('0')
 
-  const client = props.client ?? new HttpGlialClient({ baseUrl: (import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_GLIAL_BASE_URL ?? window.location.origin })
-  const userId = props.userId ?? ((import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_GLIAL_USER_ID ?? 'demo-user')
+  const baseUrl =
+    (import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_GLIAL_BASE_URL ??
+    window.location.origin
+  const client = useMemo(
+    () => props.client ?? new HttpGlialClient({ baseUrl }),
+    [baseUrl, props.client],
+  )
+  const userId =
+    props.userId ??
+    ((import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_GLIAL_USER_ID ??
+      'demo-user')
+  const replicaIdRef = useRef(createReplicaId())
 
   useEffect(() => {
-    void refreshViewerSessions(client, userId)
+    void refreshViewerSessions(client, userId).catch((error) => {
+      setViewerError(formatError(error))
+    })
   }, [client, userId])
 
   useEffect(() => {
     if (!selectedSession && sessions.length > 0) {
-      void loadViewerSession(client, userId, sessions[0].session_id)
+      selectViewerSession(sessions[0].session_id)
     }
   }, [client, selectedSession, sessions, userId])
 
@@ -53,10 +68,21 @@ export default function App(props: ViewerAppProps) {
     if (!selectedSession) {
       return
     }
-    const timer = window.setInterval(() => {
-      void loadViewerSession(client, userId, selectedSession)
-    }, 750)
-    return () => window.clearInterval(timer)
+    void loadViewerSession(client, userId, selectedSession).catch((error) => {
+      setViewerError(formatError(error))
+    })
+    const subscription = client.subscribeSharedSession(
+      userId,
+      selectedSession,
+      {
+        onSnapshot: hydrateViewerSharedSession,
+        onError: (error) => {
+          setViewerError(formatError(error))
+        },
+      },
+      replicaIdRef.current,
+    )
+    return () => subscription.close()
   }, [client, selectedSession, userId])
 
   const activeContext = contexts.find((context) => context.path === selectedContext) ?? null
@@ -71,7 +97,7 @@ export default function App(props: ViewerAppProps) {
         <ul>
           {sessions.map((session) => (
             <li key={session.session_id}>
-              <button onClick={() => void loadViewerSession(client, userId, session.session_id)}>
+              <button onClick={() => selectViewerSession(session.session_id)}>
                 {session.title ?? session.session_id}
               </button>
             </li>
@@ -118,7 +144,14 @@ export default function App(props: ViewerAppProps) {
               <button
                 onClick={() => {
                   if (selectedSession) {
-                    void requestViewerLease(client, userId, selectedSession, tap.tap_id, 'viewer-ui', 50)
+                    void requestViewerLease(
+                      client,
+                      userId,
+                      selectedSession,
+                      tap.tap_id,
+                      replicaIdRef.current,
+                      50,
+                    )
                   }
                 }}
               >
@@ -150,4 +183,15 @@ export default function App(props: ViewerAppProps) {
       </section>
     </main>
   )
+}
+
+function createReplicaId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `viewer-ui-${crypto.randomUUID()}`
+  }
+  return `viewer-ui-${Math.random().toString(36).slice(2, 10)}`
+}
+
+function formatError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }

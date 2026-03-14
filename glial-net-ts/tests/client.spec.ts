@@ -9,6 +9,41 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+class FakeWebSocket {
+  static instances: FakeWebSocket[] = [];
+
+  onopen: ((event: Event) => void) | null = null;
+  onmessage: ((event: MessageEvent) => void) | null = null;
+  onerror: ((event: Event) => void) | null = null;
+  onclose: ((event: CloseEvent) => void) | null = null;
+  readonly url: string;
+  closed = false;
+
+  constructor(url: string) {
+    this.url = url;
+    FakeWebSocket.instances.push(this);
+  }
+
+  emitOpen(): void {
+    this.onopen?.(new Event("open"));
+  }
+
+  emitMessage(data: unknown): void {
+    this.onmessage?.({
+      data: typeof data === "string" ? data : JSON.stringify(data),
+    } as MessageEvent);
+  }
+
+  emitError(): void {
+    this.onerror?.(new Event("error"));
+  }
+
+  close(): void {
+    this.closed = true;
+    this.onclose?.(new Event("close") as CloseEvent);
+  }
+}
+
 describe("HttpGlialClient", () => {
   it("attaches, submits changes, gets snapshots, and replays via fetch", async () => {
     const fetchMock = vi.fn<typeof fetch>()
@@ -240,5 +275,50 @@ describe("HttpGlialClient", () => {
 
     await expect(client.releaseTapLease('user-a', 'shared-a', 'tap-a', 'headless-a')).resolves.toBeUndefined();
     expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
+  it("subscribes to shared session websocket snapshots", async () => {
+    FakeWebSocket.instances = [];
+    const snapshots: string[] = [];
+    const errors: unknown[] = [];
+    const client = new HttpGlialClient({
+      baseUrl: "http://glial.test",
+      fetchImpl: vi.fn<typeof fetch>(),
+      webSocketFactory: (url) => new FakeWebSocket(url),
+    });
+
+    const subscription = client.subscribeSharedSession(
+      "user-a",
+      "shared-a",
+      {
+        onSnapshot: (session) => snapshots.push(session.session_id),
+        onError: (error) => errors.push(error),
+      },
+      "replica-a",
+    );
+
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    const socket = FakeWebSocket.instances[0];
+    expect(socket.url).toBe(
+      "ws://glial.test/shared-sessions/shared-a/ws?user_id=user-a&replica_id=replica-a",
+    );
+
+    socket.emitOpen();
+    socket.emitMessage({
+      type: "shared_session_snapshot",
+      session: {
+        session_id: "shared-a",
+        snapshot: { contexts: {} },
+        leases: {},
+        last_modified_ms: 1,
+      },
+    });
+    socket.emitMessage({ type: "error", message: "bad things" });
+
+    expect(snapshots).toEqual(["shared-a"]);
+    expect(errors).toHaveLength(1);
+
+    subscription.close();
+    expect(socket.closed).toBe(true);
   });
 });

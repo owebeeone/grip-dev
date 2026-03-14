@@ -125,3 +125,8 @@ class WebSocketAttachedEvent(BaseModel):
 class WebSocketAcceptedChangeEvent(BaseModel):
     type: Literal["accepted_change"] = "accepted_change"
     change: PersistedChangeModel
+
+
+class WebSocketSharedSessionEvent(BaseModel):
+    type: Literal["shared_session_snapshot"] = "shared_session_snapshot"
+    session: SharedSessionLoadResponse

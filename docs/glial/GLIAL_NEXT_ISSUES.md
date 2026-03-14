@@ -28,3 +28,4 @@ This is not a blocker for the Glial SDD, but it should be designed explicitly du
 
 - concrete `GripSessionPersistence` implementations for IndexedDB, filesystem, and Glial-linked modes
 - generic shared-tool grip materialization and mismatch diagnostics for viewer or control clients
+- projector-grade live shared-session routing for headed demos and Python clients beyond the current viewer websocket path

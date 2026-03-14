@@ -26,6 +26,7 @@ from .models import (
     WebSocketAcceptedChangeEvent,
     WebSocketAttachRequest,
     WebSocketAttachedEvent,
+    WebSocketSharedSessionEvent,
     WebSocketSubmitChangeRequest,
 )
 
@@ -165,17 +166,22 @@ def create_app(
             ) from exc
 
     @app.put("/shared-sessions/{session_id}", response_model=SharedSessionLoadResponse)
-    def put_shared_session(
+    async def put_shared_session(
         session_id: str,
         user_id: str,
         request: UpsertSharedSessionRequest,
     ) -> SharedSessionLoadResponse:
-        return app.state.glial_coordinator.save_shared_session(
+        response = app.state.glial_coordinator.save_shared_session(
             user_id,
             session_id,
             snapshot=request.snapshot,
             title=request.title,
         )
+        await app.state.glial_live_hub.broadcast(
+            _shared_channel_id(user_id, session_id),
+            WebSocketSharedSessionEvent(session=response).model_dump(mode="json"),
+        )
+        return response
 
     @app.get("/shared-sessions/{session_id}/contexts")
     def get_shared_contexts(session_id: str, user_id: str) -> dict:
@@ -211,22 +217,29 @@ def create_app(
         return shared.leases
 
     @app.post("/shared-sessions/{session_id}/leases/{tap_id}", response_model=LeaseResponse)
-    def request_shared_lease(
+    async def request_shared_lease(
         session_id: str,
         tap_id: str,
         user_id: str,
         request: LeaseRequest,
     ) -> LeaseResponse:
-        return app.state.glial_coordinator.request_tap_lease(
+        response = app.state.glial_coordinator.request_tap_lease(
             user_id,
             session_id,
             tap_id,
             replica_id=request.replica_id,
             priority=request.priority,
         )
+        await app.state.glial_live_hub.broadcast(
+            _shared_channel_id(user_id, session_id),
+            WebSocketSharedSessionEvent(
+                session=app.state.glial_coordinator.get_shared_session(user_id, session_id)
+            ).model_dump(mode="json"),
+        )
+        return response
 
     @app.delete("/shared-sessions/{session_id}/leases/{tap_id}", status_code=204)
-    def release_shared_lease(
+    async def release_shared_lease(
         session_id: str,
         tap_id: str,
         user_id: str,
@@ -243,20 +256,59 @@ def create_app(
                 status_code=404,
                 detail=f"unknown shared lease: {user_id}:{session_id}:{tap_id}",
             )
+        await app.state.glial_live_hub.broadcast(
+            _shared_channel_id(user_id, session_id),
+            WebSocketSharedSessionEvent(
+                session=app.state.glial_coordinator.get_shared_session(user_id, session_id)
+            ).model_dump(mode="json"),
+        )
 
     @app.post("/shared-sessions/{session_id}/values", response_model=SharedSessionLoadResponse)
-    def update_shared_value(
+    async def update_shared_value(
         session_id: str,
         user_id: str,
         request: SharedValueUpdateRequest,
     ) -> SharedSessionLoadResponse:
-        return app.state.glial_coordinator.update_shared_value(
+        response = app.state.glial_coordinator.update_shared_value(
             user_id,
             session_id,
             path=request.path,
             grip_id=request.grip_id,
             value=request.value,
         )
+        await app.state.glial_live_hub.broadcast(
+            _shared_channel_id(user_id, session_id),
+            WebSocketSharedSessionEvent(session=response).model_dump(mode="json"),
+        )
+        return response
+
+    @app.websocket("/shared-sessions/{session_id}/ws")
+    async def shared_session_websocket(session_id: str, websocket: WebSocket) -> None:
+        user_id = websocket.query_params.get("user_id")
+        replica_id = websocket.query_params.get("replica_id", "shared-viewer")
+        if not user_id:
+            await websocket.close(code=4400, reason="user_id is required")
+            return
+        await websocket.accept()
+        try:
+            shared = app.state.glial_coordinator.get_shared_session(user_id, session_id)
+        except KeyError:
+            await websocket.send_json({"type": "error", "message": "unknown shared session"})
+            await websocket.close(code=4404)
+            return
+
+        channel_id = _shared_channel_id(user_id, session_id)
+        await app.state.glial_live_hub.register(channel_id, replica_id, websocket)
+        await websocket.send_json(
+            WebSocketSharedSessionEvent(session=shared).model_dump(mode="json")
+        )
+        try:
+            while True:
+                await websocket.receive_text()
+        except WebSocketDisconnect:
+            pass
+        finally:
+            await app.state.glial_live_hub.unregister(channel_id, replica_id)
 
     @app.websocket("/sessions/{session_id}/ws")
     async def session_websocket(session_id: str, websocket: WebSocket) -> None:
@@ -304,3 +356,7 @@ def create_app(
                 await app.state.glial_live_hub.unregister(session_id, replica_id)
 
     return app
+
+
+def _shared_channel_id(user_id: str, session_id: str) -> str:
+    return f"shared:{user_id}:{session_id}"

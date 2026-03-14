@@ -416,3 +416,72 @@ def test_http_submitted_change_is_fanned_out_to_connected_websocket_replicas() -
         accepted = replica.receive_json()
         assert accepted["type"] == "accepted_change"
         assert accepted["change"]["payload"]["value"] == 88
+
+
+def test_shared_session_websocket_receives_initial_snapshot_and_fanout_updates() -> None:
+    client = TestClient(create_app())
+
+    seeded = client.put(
+        "/shared-sessions/shared-live-a",
+        params={"user_id": "user-a"},
+        json={
+            "title": "Shared Live A",
+            "snapshot": {
+                "session_id": "shared-live-a",
+                "contexts": {
+                    "main-home": {
+                        "path": "main-home",
+                        "name": "main-home",
+                        "children": [],
+                        "drips": {
+                            "app:Count": {
+                                "grip_id": "app:Count",
+                                "name": "Count",
+                                "value": 3,
+                                "taps": [],
+                            }
+                        },
+                    }
+                },
+                "taps": {},
+            },
+        },
+    )
+    assert seeded.status_code == 200
+
+    with client.websocket_connect(
+        "/shared-sessions/shared-live-a/ws?user_id=user-a&replica_id=viewer-a"
+    ) as viewer:
+        initial = viewer.receive_json()
+        assert initial["type"] == "shared_session_snapshot"
+        assert (
+            initial["session"]["snapshot"]["contexts"]["main-home"]["drips"]["app:Count"]["value"]
+            == 3
+        )
+
+        updated = client.post(
+            "/shared-sessions/shared-live-a/values",
+            params={"user_id": "user-a"},
+            json={"path": "main-home", "grip_id": "app:Count", "value": 9},
+        )
+        assert updated.status_code == 200
+
+        pushed = viewer.receive_json()
+        assert pushed["type"] == "shared_session_snapshot"
+        assert (
+            pushed["session"]["snapshot"]["contexts"]["main-home"]["drips"]["app:Count"]["value"]
+            == 9
+        )
+
+        lease = client.post(
+            "/shared-sessions/shared-live-a/leases/tap-count",
+            params={"user_id": "user-a"},
+            json={"replica_id": "headless-a", "priority": 50},
+        )
+        assert lease.status_code == 200
+
+        lease_event = viewer.receive_json()
+        assert lease_event["type"] == "shared_session_snapshot"
+        assert (
+            lease_event["session"]["leases"]["tap-count"]["primary_replica_id"] == "headless-a"
+        )

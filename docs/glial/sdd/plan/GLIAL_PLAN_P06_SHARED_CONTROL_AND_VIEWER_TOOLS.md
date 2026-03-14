@@ -177,11 +177,12 @@ Implemented:
 - dynamic shared-grip materialization for unknown canonical `grip_id` values
 - Python control client with session listing, graph inspection, lease negotiation, release, and value updates
 - generic React viewer with routed shared-session browsing, lease requests, and shared value updates
-- UI tests for viewer session load, refresh, lease request, and value updates
+- shared-session websocket subscription path from router to viewer
+- UI tests for viewer session load, live websocket updates, lease request, and value updates
 
 Still remaining if we want the full end-state described earlier:
 
-- live shared-projection subscription instead of poll-based refresh
 - true `GripProjector`-style Glial client attachment for shared sessions
+- live shared-projection subscription for headed demos and Python clients, not just the viewer
 - explicit mismatch diagnostics in the viewer when local typed grips do not safely bind
 - stronger multi-client convergence tests across headed demo, viewer, and Python control client in one run

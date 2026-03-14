@@ -43,6 +43,27 @@ export interface SharedSessionLoadResponse {
   last_modified_ms: number;
 }
 
+export interface SharedSessionSubscriptionHandlers {
+  onSnapshot?(session: SharedSessionLoadResponse): void;
+  onError?(error: unknown): void;
+  onOpen?(): void;
+  onClose?(): void;
+}
+
+export interface SharedSessionSubscription {
+  close(): void;
+}
+
+interface WebSocketLike {
+  onopen: ((event: Event) => void) | null;
+  onmessage: ((event: MessageEvent) => void) | null;
+  onerror: ((event: Event) => void) | null;
+  onclose: ((event: CloseEvent) => void) | null;
+  close(): void;
+}
+
+type WebSocketFactory = (url: string) => WebSocketLike;
+
 export interface LeaseResponse {
   tap_id: string;
   primary_replica_id: string;
@@ -54,6 +75,7 @@ export interface LeaseResponse {
 export interface HttpGlialClientOptions {
   baseUrl: string;
   fetchImpl?: typeof fetch;
+  webSocketFactory?: WebSocketFactory;
 }
 
 async function requestJson<T>(
@@ -82,10 +104,12 @@ async function requestNoContent(
 export class HttpGlialClient {
   private readonly baseUrl: string;
   private readonly fetchImpl: typeof fetch;
+  private readonly webSocketFactory?: WebSocketFactory;
 
   constructor(opts: HttpGlialClientOptions) {
     this.baseUrl = opts.baseUrl.replace(/\/+$/, "");
     this.fetchImpl = opts.fetchImpl ?? fetch;
+    this.webSocketFactory = opts.webSocketFactory;
   }
 
   async attachSession(
@@ -251,6 +275,88 @@ export class HttpGlialClient {
       body: JSON.stringify(input),
     });
   }
+
+  subscribeSharedSession(
+    userId: string,
+    sessionId: string,
+    handlers: SharedSessionSubscriptionHandlers,
+    replicaId?: string,
+  ): SharedSessionSubscription {
+    const socket = this.createWebSocket(
+      this.buildSharedSessionWebSocketUrl(
+        userId,
+        sessionId,
+        replicaId ?? createReplicaId("shared-viewer"),
+      ),
+    );
+    socket.onopen = (event) => {
+      handlers.onOpen?.();
+      void event;
+    };
+    socket.onmessage = (event) => {
+      try {
+        const parsed = JSON.parse(String(event.data ?? "{}")) as
+          | { type?: string; session?: SharedSessionLoadResponse; message?: string }
+          | undefined;
+        if (parsed?.type === "shared_session_snapshot" && parsed.session) {
+          handlers.onSnapshot?.(parsed.session);
+          return;
+        }
+        if (parsed?.type === "error") {
+          handlers.onError?.(
+            new Error(parsed.message ?? "Glial shared-session websocket error"),
+          );
+          return;
+        }
+        handlers.onError?.(
+          new Error(`Unsupported Glial shared-session websocket event: ${parsed?.type ?? "unknown"}`),
+        );
+      } catch (error) {
+        handlers.onError?.(error);
+      }
+    };
+    socket.onerror = (event) => {
+      handlers.onError?.(event);
+    };
+    socket.onclose = (event) => {
+      handlers.onClose?.();
+      void event;
+    };
+    return {
+      close(): void {
+        socket.close();
+      },
+    };
+  }
+
+  private buildSharedSessionWebSocketUrl(
+    userId: string,
+    sessionId: string,
+    replicaId: string,
+  ): string {
+    const url = new URL(
+      `/shared-sessions/${sessionId}/ws`,
+      this.baseUrl.endsWith("/") ? this.baseUrl : `${this.baseUrl}/`,
+    );
+    if (url.protocol === "http:") {
+      url.protocol = "ws:";
+    } else if (url.protocol === "https:") {
+      url.protocol = "wss:";
+    }
+    url.searchParams.set("user_id", userId);
+    url.searchParams.set("replica_id", replicaId);
+    return url.toString();
+  }
+
+  private createWebSocket(url: string): WebSocketLike {
+    if (this.webSocketFactory) {
+      return this.webSocketFactory(url);
+    }
+    if (typeof WebSocket === "undefined") {
+      throw new Error("WebSocket is not available in this runtime");
+    }
+    return new WebSocket(url);
+  }
 }
 
 export class HttpGripSessionLink implements GripSessionLink {
@@ -285,4 +391,11 @@ export class HttpGripSessionLink implements GripSessionLink {
   ): Promise<void> {
     this.lastAcceptedChange = await this.client.submitChange(session_id, change);
   }
+}
+
+function createReplicaId(prefix: string): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return `${prefix}-${crypto.randomUUID()}`;
+  }
+  return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
 }

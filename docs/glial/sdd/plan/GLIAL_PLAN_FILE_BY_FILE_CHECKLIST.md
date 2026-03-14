@@ -226,11 +226,12 @@ These are new capabilities required by the revised SDD:
 ### `/Users/owebeeone/limbo/grip-dev/glial-net-ts/src/client.ts`
 
 - partial: shared-session inspection, lease negotiation, and shared value update APIs now exist
-- remaining: move from poll-based shared-session refresh to a true live shared-projection projector
+- completed: shared-session websocket subscription now exists for live viewer updates
+- remaining: move the headed demo link from poll-based source-state sync to a true live shared-projection projector
 - completed: remote session list/load/save client calls now exist
 - completed: remote session delete client call now exists
 - support browser session record update after remote load
-- partial: headed-to-headless follower hydration exists through shared snapshot load, but not a live projector yet
+- partial: headed-to-headless follower hydration exists through shared snapshot load and live viewer subscription, but not a full live projector yet
 - keep pending-sync and confirmation logic for local mutations
 - implement the client as a `shared-projection` projector rather than a special-case attach API
 
@@ -266,10 +267,11 @@ These are new capabilities required by the revised SDD:
 - completed: remote session load and save endpoints exist
 - completed: remote session delete endpoint exists
 - completed: websocket live session attach and accepted-change fanout endpoint exists
+- completed: shared-session websocket subscription endpoint now exists
 - completed: built `grip-react-demo` bundle can be served from the router at `/demo/`
 - completed: built `glial-viewer-ts` bundle can be served from the router at `/viewer/`
 - add storage mode aware session creation or attach endpoints if needed
-- remaining: add shared-session websocket or server-push subscription if we want live projector semantics instead of polling
+- remaining: extend shared-session websocket from viewer-grade server push to full projector-grade live sync semantics
 
 ### `/Users/owebeeone/limbo/grip-dev/glial-router-py/src/glial_router/coordinator.py`
 
@@ -292,6 +294,7 @@ These are new capabilities required by the revised SDD:
 - completed: remote session delete tests exist
 - completed: websocket live session fanout tests exist
 - completed: shared projection graph, lease, and raw value update tests exist against the FastAPI server
+- completed: shared-session websocket initial snapshot and fanout tests now exist
 - remaining: add explicit headed-to-headless multi-client convergence tests if we want stronger end-to-end coverage
 
 ## New Tooling Packages
@@ -310,8 +313,8 @@ These are new capabilities required by the revised SDD:
 - completed: uses a raw shared-session Grok plus a viewer Grok rather than application-specific UI code
 - completed: supports dynamic grip materialization for unknown shared `grip_id` values
 - partial: passive tap metadata is visible in the UI, but explicit mismatch diagnostics are still minimal
-- completed: UI tests cover session load, primary negotiation, shared value updates, and refresh behavior
-- remaining: move from interval refresh to a live projector or websocket subscription if needed
+- completed: UI tests cover session load, primary negotiation, shared value updates, and live websocket updates
+- completed: interval refresh has been replaced with shared-session websocket subscription
 
 ## `grip-react-demo`
 
@@ -395,9 +398,8 @@ Required behavior:
 
 The next practical slice should be:
 
-- replace demo polling sync with true shared-projection client wiring in `glial-net-ts` and `glial-net-py`
-- add lease negotiation endpoints and client helpers end to end
-- build `glial-control-py`
-- build `glial-viewer-ts`
+- replace headed demo polling sync with true shared-projection client wiring in `glial-net-ts` and `glial-net-py`
+- extend shared-session live routing beyond the viewer to headed and Python clients
+- add stronger multi-client convergence tests across browser demo, Python demo, viewer, and control client
 
-That is the remaining work needed to move from backup-oriented demo sync to true routed headed/headed and headed/headless sharing.
+That is the remaining work needed to move from the current hybrid model to true routed headed/headed and headed/headless live sharing everywhere.

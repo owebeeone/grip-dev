@@ -60,6 +60,14 @@ function setViewerState<T>(grip: Grip<T>, value: T): void {
   viewerStateTap.set(grip, value)
 }
 
+export function setViewerError(message: string | null): void {
+  setViewerState(VIEWER_ERROR, message)
+}
+
+export function selectViewerSession(sessionId: string | null): void {
+  setViewerState(VIEWER_SELECTED_SESSION, sessionId)
+}
+
 export function getRawSharedGrok(): Grok {
   return rawSharedGrok
 }
@@ -84,6 +92,7 @@ export async function loadViewerSession(
   userId: string,
   sessionId: string,
 ): Promise<void> {
+  selectViewerSession(sessionId)
   const shared = await client.loadSharedSession(userId, sessionId)
   hydrateViewerSharedSession(shared)
 }

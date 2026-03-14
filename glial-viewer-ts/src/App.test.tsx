@@ -12,10 +12,36 @@ function jsonResponse(body: unknown): Response {
   })
 }
 
+class FakeWebSocket {
+  static instances: FakeWebSocket[] = []
+
+  onopen: ((event: Event) => void) | null = null
+  onmessage: ((event: MessageEvent) => void) | null = null
+  onerror: ((event: Event) => void) | null = null
+  onclose: ((event: CloseEvent) => void) | null = null
+  readonly url: string
+
+  constructor(url: string) {
+    this.url = url
+    FakeWebSocket.instances.push(this)
+  }
+
+  emitMessage(data: unknown) {
+    this.onmessage?.({
+      data: typeof data === 'string' ? data : JSON.stringify(data),
+    } as MessageEvent)
+  }
+
+  close() {
+    this.onclose?.(new Event('close') as CloseEvent)
+  }
+}
+
 describe('Glial viewer UI', () => {
   afterEach(() => {
     cleanup()
     resetViewerRuntime()
+    FakeWebSocket.instances = []
   })
 
   it('renders shared sessions, negotiates primary, and sends shared value updates', async () => {
@@ -103,7 +129,11 @@ describe('Glial viewer UI', () => {
       throw new Error(`Unhandled fetch: ${method} ${url}`)
     })
 
-    const client = new HttpGlialClient({ baseUrl: 'http://glial.test', fetchImpl: fetchMock })
+    const client = new HttpGlialClient({
+      baseUrl: 'http://glial.test',
+      fetchImpl: fetchMock,
+      webSocketFactory: (url) => new FakeWebSocket(url),
+    })
     render(
       <GripProvider grok={viewerGrok} context={viewerGrok.mainPresentationContext}>
         <App client={client} userId="demo-user" />
@@ -125,8 +155,7 @@ describe('Glial viewer UI', () => {
     await waitFor(() => expect(screen.getByText('8')).toBeTruthy())
   })
 
-  it('refreshes the selected shared session and updates rendered drip values', async () => {
-    let loadCount = 0
+  it('applies shared-session websocket updates without polling', async () => {
 
     const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
       const url = String(input)
@@ -137,7 +166,6 @@ describe('Glial viewer UI', () => {
         ])
       }
       if (url.endsWith('/shared-sessions/shared-a?user_id=demo-user') && method === 'GET') {
-        loadCount += 1
         return jsonResponse({
           session_id: 'shared-a',
           title: 'Shared A',
@@ -152,7 +180,7 @@ describe('Glial viewer UI', () => {
                   'app:Count': {
                     grip_id: 'app:Count',
                     name: 'Count',
-                    value: loadCount > 1 ? 8 : 5,
+                    value: 5,
                     taps: [],
                   },
                 },
@@ -161,13 +189,17 @@ describe('Glial viewer UI', () => {
             taps: {},
           },
           leases: {},
-          last_modified_ms: loadCount,
+          last_modified_ms: 1,
         })
       }
       throw new Error(`Unhandled fetch: ${method} ${url}`)
     })
 
-    const client = new HttpGlialClient({ baseUrl: 'http://glial.test', fetchImpl: fetchMock })
+    const client = new HttpGlialClient({
+      baseUrl: 'http://glial.test',
+      fetchImpl: fetchMock,
+      webSocketFactory: (url) => new FakeWebSocket(url),
+    })
     render(
       <GripProvider grok={viewerGrok} context={viewerGrok.mainPresentationContext}>
         <App client={client} userId="demo-user" />
@@ -175,7 +207,36 @@ describe('Glial viewer UI', () => {
     )
 
     await waitFor(() => expect(screen.getByText('5')).toBeTruthy())
-    await new Promise((resolve) => setTimeout(resolve, 850))
+    expect(FakeWebSocket.instances).toHaveLength(1)
+    FakeWebSocket.instances[0].emitMessage({
+      type: 'shared_session_snapshot',
+      session: {
+        session_id: 'shared-a',
+        title: 'Shared A',
+        snapshot: {
+          session_id: 'shared-a',
+          contexts: {
+            'main-home': {
+              path: 'main-home',
+              name: 'main-home',
+              children: [],
+              drips: {
+                'app:Count': {
+                  grip_id: 'app:Count',
+                  name: 'Count',
+                  value: 8,
+                  taps: [],
+                },
+              },
+            },
+          },
+          taps: {},
+        },
+        leases: {},
+        last_modified_ms: 2,
+      },
+    })
     await waitFor(() => expect(screen.getByText('8')).toBeTruthy())
-  }, 7000)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
 })

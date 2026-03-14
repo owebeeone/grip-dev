@@ -6,5 +6,7 @@ export type {
   RemoteSessionLoadResponse,
   RemoteSessionSummary,
   ReplayResponse,
+  SharedSessionSubscription,
+  SharedSessionSubscriptionHandlers,
   SharedSessionLoadResponse,
 } from "./client";
