@@ -26,3 +26,6 @@
 [submodule "grip-pyrolyze-examples"]
 	path = grip-pyrolyze-examples
 	url = git@github.com:owebeeone/grip-pyrolyze-examples.git
+[submodule "grip-pyrolyze"]
+	path = grip-pyrolyze
+	url = git@github.com:owebeeone/grip-pyrolyze.git
