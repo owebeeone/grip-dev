@@ -1,9 +1,43 @@
 import os
 import subprocess
-import tomli
-from pathlib import Path
-from typing import Set, Dict
 import sys
+from pathlib import Path
+
+
+def _maybe_reexec_with_repo_venv() -> None:
+    if sys.version_info >= (3, 11):
+        return
+    script_path = Path(__file__).resolve()
+    for root in script_path.parents:
+        venv_py = (root / ".venv" / "bin" / "python").absolute()
+        if not venv_py.is_file() or not os.access(venv_py, os.X_OK):
+            continue
+        try:
+            if os.path.samefile(sys.executable, venv_py):
+                continue
+        except OSError:
+            pass
+        argv0 = os.fspath(venv_py)
+        os.execv(argv0, [argv0, os.fspath(script_path), *sys.argv[1:]])
+
+
+_maybe_reexec_with_repo_venv()
+
+from typing import Set, Dict
+
+try:
+    import tomllib
+except ModuleNotFoundError:
+    try:
+        import tomli as tomllib
+    except ModuleNotFoundError:
+        sys.stderr.write(
+            "TOML parsing needs Python 3.11+ (stdlib tomllib) or the 'tomli' package.\n"
+            f"  This interpreter: {sys.executable}\n"
+            f"  Install tomli here:   {sys.executable} -m pip install tomli\n"
+            "  Or run with a 3.11+ venv, e.g. ./.venv/bin/python …\n"
+        )
+        raise SystemExit(1) from None
 import argparse
 from packaging.specifiers import SpecifierSet
 from packaging.requirements import Requirement
@@ -110,7 +144,7 @@ def parse_pyproject_toml(file_path: Path) -> Dict[str, Set[str]]:
     
     with open(file_path, 'rb') as f:
         try:
-            data = tomli.load(f)
+            data = tomllib.load(f)
             
             # Get main project dependencies
             if 'project' in data and 'dependencies' in data['project']:

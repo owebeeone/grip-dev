@@ -1,5 +1,8 @@
 .DS_Store
 .vscode/.env
+.vscode/launch.json
+.vscode/local_settings.py
+.vscode/settings.json
 .dev-venv/
 __pycache__/
 *.pyc

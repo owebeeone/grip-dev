@@ -19,3 +19,10 @@
 [submodule "grip-py-demo"]
 	path = grip-py-demo
 	url = git@github.com:owebeeone/grip-py-demo.git
+[submodule "pyrolyze"]
+	path = pyrolyze
+	url = git@github.com:owebeeone/py-rolyze-wip.git
+	branch = codex/no_comp_value_hyp
+[submodule "grip-pyrolyze-examples"]
+	path = grip-pyrolyze-examples
+	url = git@github.com:owebeeone/grip-pyrolyze-examples.git
