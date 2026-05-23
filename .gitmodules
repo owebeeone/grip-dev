@@ -29,3 +29,6 @@
 [submodule "grip-pyrolyze"]
 	path = grip-pyrolyze
 	url = git@github.com:owebeeone/grip-pyrolyze.git
+[submodule "yidl-lifecycle"]
+	path = yidl-lifecycle
+	url = git@github.com:owebeeone/yidl-lifecycle.git
