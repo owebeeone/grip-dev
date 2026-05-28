@@ -49,6 +49,22 @@ This manages:
 - `.vscode/.env`
 - `.vscode/local_settings.py`
 
+## Project Viewer Proof of Concept
+
+`project_viewer.py` is a small FastAPI/Graphviz proof of concept for onboarding into this
+workspace. It renders the root repository and submodules, shows git status and metadata, and
+includes early command-session experiments such as `git pull --ff-only`.
+
+Run it from the repository root:
+
+```bash
+python project_viewer.py
+```
+
+Then open <http://localhost:8000>. Re-running the script replaces the previous viewer process
+and keeps the same port when possible. This is intended as a temporary project browser; the next
+iteration should likely be a proper React/GRIP application with a more serious tool surface.
+
 ## Spec
 
 - `docs/GRIPPY_SPEC.md` contains the current package/API transition specification.
