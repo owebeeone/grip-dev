@@ -7,18 +7,23 @@ import fcntl
 import html
 import json
 import os
+import pty
 import re
+import resource
 import secrets
+import select
 import signal
 import subprocess
+import threading
 import time
 import urllib.error
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 
 import graphviz
 import uvicorn
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 
 
@@ -28,9 +33,12 @@ WORKSPACE_ROOT = Path(__file__).resolve().parent
 GITMODULES_PATH = WORKSPACE_ROOT / ".gitmodules"
 SENTINEL_PATH = WORKSPACE_ROOT / ".project_viewer_server.json"
 LOCK_PATH = WORKSPACE_ROOT / ".project_viewer_server.lock"
+RUNS_ROOT = WORKSPACE_ROOT / ".project_viewer" / "runs"
 SHUTDOWN_TIMEOUT_SECONDS = 4.0
+DONE_SENTINEL = "__PROJECT_VIEWER_DONE__"
 
 app = FastAPI()
+ACTIVE_RUNS: dict[str, "CommandRun"] = {}
 
 
 class SingleInstanceServer:
@@ -169,6 +177,166 @@ class SingleInstanceServer:
 
         return await asyncio.to_thread(prepare_sync)
 
+
+class CommandRun:
+    def __init__(self, repo_key: str, cwd: Path, argv: list[str], loop: asyncio.AbstractEventLoop) -> None:
+        self.repo_key = repo_key
+        self.cwd = cwd
+        self.argv = argv
+        self.loop = loop
+        self.run_id = self.make_run_id(repo_key, argv)
+        self.run_dir = RUNS_ROOT / self.safe_name(repo_key) / self.run_id
+        self.meta_path = self.run_dir / "meta.yaml"
+        self.log_path = self.run_dir / "output.log"
+        self.process: subprocess.Popen[bytes] | None = None
+        self.master_fd: int | None = None
+        self.status = "created"
+        self.exit_code: int | None = None
+        self.started_at = datetime.now(timezone.utc).isoformat()
+        self.ended_at: str | None = None
+        self.started_monotonic: float | None = None
+        self.start_usage: resource.struct_rusage | None = None
+        self.elapsed_seconds: float | None = None
+        self.user_seconds: float | None = None
+        self.system_seconds: float | None = None
+        self.cpu_percent: float | None = None
+        self.subscribers: set[asyncio.Queue[str]] = set()
+
+    @staticmethod
+    def safe_name(value: str) -> str:
+        return re.sub(r"[^A-Za-z0-9_.-]+", "-", value).strip("-") or "run"
+
+    @classmethod
+    def make_run_id(cls, repo_key: str, argv: list[str]) -> str:
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        action = cls.safe_name("-".join(argv[:2]))
+        return f"{stamp}-{cls.safe_name(repo_key)}-{action}-{secrets.token_hex(3)}"
+
+    def write_meta(self) -> None:
+        self.run_dir.mkdir(parents=True, exist_ok=True)
+        lines = [
+            f"id: {self.run_id}",
+            f"repo: {self.repo_key}",
+            f"cwd: {self.cwd.relative_to(WORKSPACE_ROOT) if self.cwd.is_relative_to(WORKSPACE_ROOT) else self.cwd}",
+            "command:",
+            *[f"  - {json.dumps(part)}" for part in self.argv],
+            f"status: {self.status}",
+            f"pid: {self.process.pid if self.process else ''}",
+            f"started_at: {json.dumps(self.started_at)}",
+            f"ended_at: {json.dumps(self.ended_at) if self.ended_at else ''}",
+            f"exit_code: {self.exit_code if self.exit_code is not None else ''}",
+            f"elapsed_seconds: {self.elapsed_seconds if self.elapsed_seconds is not None else ''}",
+            f"user_seconds: {self.user_seconds if self.user_seconds is not None else ''}",
+            f"system_seconds: {self.system_seconds if self.system_seconds is not None else ''}",
+            f"cpu_percent: {self.cpu_percent if self.cpu_percent is not None else ''}",
+            f"log: {self.log_path.relative_to(WORKSPACE_ROOT)}",
+        ]
+        self.meta_path.write_text("\n".join(lines) + "\n")
+
+    def append_log(self, text: str) -> None:
+        self.run_dir.mkdir(parents=True, exist_ok=True)
+        with self.log_path.open("a", encoding="utf-8", errors="replace") as log_file:
+            log_file.write(text)
+            log_file.flush()
+        for queue in list(self.subscribers):
+            self.loop.call_soon_threadsafe(queue.put_nowait, text)
+
+    def start(self) -> None:
+        self.status = "running"
+        self.started_monotonic = time.monotonic()
+        self.start_usage = resource.getrusage(resource.RUSAGE_CHILDREN)
+        self.write_meta()
+        self.append_log(f"$ {' '.join(self.argv)}\n")
+        self.append_log(f"cwd: {self.cwd.relative_to(WORKSPACE_ROOT)}\nstarted_at: {self.started_at}\n\n")
+
+        master_fd, slave_fd = pty.openpty()
+        self.master_fd = master_fd
+        try:
+            self.process = subprocess.Popen(
+                self.argv,
+                cwd=self.cwd,
+                stdin=slave_fd,
+                stdout=slave_fd,
+                stderr=slave_fd,
+                close_fds=True,
+                start_new_session=True,
+            )
+        finally:
+            os.close(slave_fd)
+        self.write_meta()
+        threading.Thread(target=self._reader, name=f"project-viewer-{self.run_id}", daemon=True).start()
+
+    def _reader(self) -> None:
+        assert self.process is not None
+        assert self.master_fd is not None
+        try:
+            while True:
+                ready, _, _ = select.select([self.master_fd], [], [], 0.2)
+                if ready:
+                    try:
+                        data = os.read(self.master_fd, 4096)
+                    except OSError:
+                        break
+                    if not data:
+                        break
+                    self.append_log(data.decode(errors="replace"))
+                if self.process.poll() is not None and not ready:
+                    break
+        finally:
+            self.exit_code = self.process.wait()
+            self.status = "done" if self.exit_code == 0 else "failed"
+            self.ended_at = datetime.now(timezone.utc).isoformat()
+            self.record_usage()
+            self.append_log(
+                "\n"
+                f"{DONE_SENTINEL} exit_code={self.exit_code} "
+                f"elapsed={self.elapsed_seconds:.2f}s "
+                f"user={self.user_seconds:.2f}s "
+                f"system={self.system_seconds:.2f}s "
+                f"cpu={self.cpu_percent:.0f}%\n"
+            )
+            self.write_meta()
+            if self.master_fd is not None:
+                with contextlib.suppress(OSError):
+                    os.close(self.master_fd)
+
+    def subscribe(self) -> asyncio.Queue[str]:
+        queue: asyncio.Queue[str] = asyncio.Queue()
+        self.subscribers.add(queue)
+        return queue
+
+    def unsubscribe(self, queue: asyncio.Queue[str]) -> None:
+        self.subscribers.discard(queue)
+
+    def send_signal(self, signum: int) -> None:
+        if not self.process or self.process.poll() is not None:
+            return
+        os.killpg(self.process.pid, signum)
+
+    def record_usage(self) -> None:
+        if self.started_monotonic is None or self.start_usage is None:
+            return
+        usage = resource.getrusage(resource.RUSAGE_CHILDREN)
+        self.elapsed_seconds = max(time.monotonic() - self.started_monotonic, 0.001)
+        self.user_seconds = max(usage.ru_utime - self.start_usage.ru_utime, 0.0)
+        self.system_seconds = max(usage.ru_stime - self.start_usage.ru_stime, 0.0)
+        self.cpu_percent = ((self.user_seconds + self.system_seconds) / self.elapsed_seconds) * 100
+
+    def payload(self) -> dict[str, object]:
+        return {
+            "id": self.run_id,
+            "repo": self.repo_key,
+            "command": self.argv,
+            "status": self.status,
+            "exit_code": self.exit_code,
+            "started_at": self.started_at,
+            "ended_at": self.ended_at,
+            "elapsed_seconds": self.elapsed_seconds,
+            "log_url": f"/api/runs/{self.run_id}/log",
+            "stream_url": f"/api/runs/{self.run_id}/stream",
+        }
+
+
 RELATIONSHIPS = [
     ("astichi", "yidl"),
     ("yidl", "yidl-lifecycle"),
@@ -223,6 +391,7 @@ def read_submodule_paths() -> dict[str, dict[str, str]]:
         path = parser.get(section, "path")
         url = parser.get(section, "url")
         modules[name] = {
+            "key": name,
             "name": name,
             "path": path,
             "url": github_url(url),
@@ -349,6 +518,7 @@ def read_root_repo_info() -> dict[str, object]:
     description, source = read_description(WORKSPACE_ROOT)
     version, version_source = read_version(WORKSPACE_ROOT)
     return {
+        "key": ROOT_KEY,
         "name": WORKSPACE_ROOT.name,
         "path": ".",
         "url": git_remote_url(WORKSPACE_ROOT),
@@ -581,6 +751,109 @@ HTML_TEMPLATE = r"""
       text-decoration: none;
       font-size: 13px;
     }
+    #repo-menu button {
+      display: inline-block;
+      margin-left: 8px;
+      padding: 7px 10px;
+      border: 0;
+      border-radius: 8px;
+      background: #334155;
+      color: white;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    #terminal-panel {
+      display: none;
+      max-width: 96vw;
+      margin: 18px auto 0;
+      border: 1px solid #1e293b;
+      border-radius: 14px;
+      overflow: hidden;
+      background: #020617;
+      color: #e2e8f0;
+      box-shadow: 0 12px 30px rgba(15, 23, 42, 0.20);
+    }
+    #terminal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 12px;
+      background: #0f172a;
+      font-size: 13px;
+    }
+    #terminal-header button {
+      padding: 5px 9px;
+      border: 1px solid #64748b;
+      border-radius: 8px;
+      background: #1e293b;
+      color: #e2e8f0;
+      cursor: pointer;
+    }
+    #terminal-header button:disabled {
+      cursor: not-allowed;
+      opacity: 0.45;
+    }
+    #terminal-output {
+      margin: 0;
+      max-height: 360px;
+      overflow: auto;
+      padding: 12px;
+      white-space: pre-wrap;
+      font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    #sessions-panel {
+      max-width: 96vw;
+      margin: 18px auto 0;
+      padding: 16px;
+      border: 1px solid #cbd5e1;
+      border-radius: 16px;
+      background: white;
+    }
+    #sessions-panel h2 { margin: 0 0 12px; font-size: 16px; }
+    #batch-controls { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; }
+    #batch-controls button {
+      padding: 7px 10px;
+      border: 1px solid #94a3b8;
+      border-radius: 9px;
+      background: #f8fafc;
+      cursor: pointer;
+    }
+    #batch-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .run-card {
+      border: 1px solid #cbd5e1;
+      border-radius: 12px;
+      padding: 10px;
+      background: #f8fafc;
+      cursor: pointer;
+      min-height: 86px;
+    }
+    .run-card.running { border-color: #2563eb; }
+    .run-card.done { border-color: #16a34a; }
+    .run-card.failed { border-color: #dc2626; }
+    .run-card strong { display: block; margin-bottom: 4px; }
+    .run-card code { color: #475569; font-size: 12px; }
+    #sessions-list {
+      max-height: 220px;
+      overflow: auto;
+      border-top: 1px solid #e2e8f0;
+      padding-top: 10px;
+    }
+    .session-row {
+      display: grid;
+      grid-template-columns: 1.1fr 1.6fr 0.7fr 0.7fr;
+      gap: 8px;
+      padding: 7px 4px;
+      border-bottom: 1px solid #f1f5f9;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .session-row:hover { background: #f8fafc; }
   </style>
 </head>
 <body>
@@ -601,6 +874,25 @@ HTML_TEMPLATE = r"""
     </div>
   </div>
   <div id="graph-container">__GRAPH_SVG__</div>
+  <section id="terminal-panel" aria-live="polite">
+    <div id="terminal-header">
+      <strong id="terminal-title">Command session</strong>
+      <span>
+        <button id="interrupt-run" type="button" disabled>Interrupt</button>
+        <button id="close-terminal" type="button">Close</button>
+      </span>
+    </div>
+    <pre id="terminal-output"></pre>
+  </section>
+  <section id="sessions-panel">
+    <h2>Command Sessions</h2>
+    <div id="batch-controls">
+      <button id="git-branch-all" type="button">Git branch: all repos</button>
+      <button id="refresh-sessions" type="button">Refresh sessions</button>
+    </div>
+    <div id="batch-grid"></div>
+    <div id="sessions-list"></div>
+  </section>
   <div id="tooltip"></div>
   <div id="repo-menu" role="menu" aria-hidden="true"></div>
   <script>
@@ -609,6 +901,17 @@ HTML_TEMPLATE = r"""
     const rootButton = document.getElementById("root-status-button");
     const tooltip = document.getElementById("tooltip");
     const menu = document.getElementById("repo-menu");
+    const terminalPanel = document.getElementById("terminal-panel");
+    const terminalTitle = document.getElementById("terminal-title");
+    const terminalOutput = document.getElementById("terminal-output");
+    const interruptButton = document.getElementById("interrupt-run");
+    const closeTerminalButton = document.getElementById("close-terminal");
+    const gitBranchAllButton = document.getElementById("git-branch-all");
+    const refreshSessionsButton = document.getElementById("refresh-sessions");
+    const sessionsList = document.getElementById("sessions-list");
+    const batchGrid = document.getElementById("batch-grid");
+    let activeRunId = null;
+    let activeSocket = null;
 
     function nodeFromEvent(event) {
       return event.target.closest("[data-node-id]");
@@ -643,6 +946,7 @@ HTML_TEMPLATE = r"""
         </dl>
         ${details}
         <a href="${info.url}" target="_blank" rel="noopener noreferrer">Open GitHub</a>
+        <button type="button" data-action="git-pull" data-node-id="${info.key}">Git pull</button>
       `;
       menu.style.left = "0px";
       menu.style.top = "0px";
@@ -708,6 +1012,153 @@ HTML_TEMPLATE = r"""
       if (!menu.contains(event.target)) hideMenu();
     });
 
+    menu.addEventListener("click", async (event) => {
+      const actionButton = event.target.closest("button[data-action='git-pull']");
+      if (!actionButton) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const info = submoduleInfo[actionButton.dataset.nodeId];
+      if (info) await startGitPull(info);
+    });
+
+    async function startGitPull(info) {
+      hideMenu();
+      openTerminal(`${info.name}: git pull --ff-only`, "Starting git pull...\\n");
+
+      const response = await fetch(`/api/runs/git-pull/${encodeURIComponent(info.key)}`, { method: "POST" });
+      if (!response.ok) {
+        terminalOutput.textContent += `Failed to start run: ${response.status} ${response.statusText}\\n`;
+        return;
+      }
+
+      const run = await response.json();
+      connectRun(run.run_id, run.stream_url, false);
+    }
+
+    function openTerminal(title, initialText = "") {
+      terminalPanel.style.display = "block";
+      terminalTitle.textContent = title;
+      terminalOutput.textContent = initialText;
+    }
+
+    function setInterruptEnabled(enabled) {
+      interruptButton.disabled = !enabled;
+    }
+
+    function connectRun(runId, streamUrl, append = false) {
+      activeRunId = runId;
+      if (activeSocket) activeSocket.close();
+      if (!append) terminalOutput.textContent = terminalOutput.textContent || "";
+      setInterruptEnabled(true);
+      activeSocket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${streamUrl}`);
+      activeSocket.onmessage = (message) => {
+        const payload = JSON.parse(message.data);
+        if (payload.type === "output") {
+          terminalOutput.textContent += payload.text;
+          terminalOutput.scrollTop = terminalOutput.scrollHeight;
+        }
+        if (payload.type === "done") {
+          terminalOutput.textContent += `\\n[project-viewer] run finished with exit code ${payload.exit_code}\\n`;
+          terminalOutput.scrollTop = terminalOutput.scrollHeight;
+          setInterruptEnabled(false);
+        }
+        if (payload.type === "error") {
+          terminalOutput.textContent += `\\n[project-viewer] ${payload.message}\\n`;
+          setInterruptEnabled(false);
+        }
+      };
+      activeSocket.onerror = () => {
+        terminalOutput.textContent += "\\n[project-viewer] websocket error\\n";
+        setInterruptEnabled(false);
+      };
+      activeSocket.onclose = () => {
+        setInterruptEnabled(false);
+      };
+    }
+
+    async function loadRunLog(run) {
+      openTerminal(`${run.repo}: ${(run.command || []).join(" ")}`, "Loading log...\\n");
+      const response = await fetch(run.log_url);
+      const payload = await response.json();
+      terminalOutput.textContent = payload.log;
+      if (run.status === "running" && run.stream_url) {
+        connectRun(run.id, run.stream_url, true);
+      } else {
+        setInterruptEnabled(false);
+      }
+    }
+
+    function renderRunCard(run) {
+      const command = (run.command || []).join(" ");
+      const card = document.createElement("div");
+      card.className = `run-card ${run.status || ""}`;
+      card.dataset.runId = run.id;
+      card.innerHTML = `
+        <strong>${run.repo}</strong>
+        <div>${run.status || "unknown"} ${run.exit_code ? `(${run.exit_code})` : ""}</div>
+        <code>${command}</code>
+      `;
+      card.addEventListener("click", () => loadRunLog(run));
+      return card;
+    }
+
+    async function refreshSessions() {
+      const response = await fetch("/api/runs");
+      const payload = await response.json();
+      const runs = payload.runs || [];
+      sessionsList.innerHTML = "";
+      for (const run of runs.slice(0, 30)) {
+        const row = document.createElement("div");
+        row.className = "session-row";
+        row.innerHTML = `
+          <span>${run.repo || ""}</span>
+          <span>${(run.command || []).join(" ")}</span>
+          <span>${run.status || ""}</span>
+          <span>${run.exit_code || ""}</span>
+        `;
+        row.addEventListener("click", () => loadRunLog(run));
+        sessionsList.appendChild(row);
+      }
+    }
+
+    async function startGitBranchAll() {
+      batchGrid.innerHTML = "";
+      const response = await fetch("/api/runs/git-branch-all", { method: "POST" });
+      const payload = await response.json();
+      for (const run of payload.runs || []) {
+        batchGrid.appendChild(renderRunCard(run));
+        const socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${run.stream_url}`);
+        let lastOutput = "";
+        const card = batchGrid.lastElementChild;
+        socket.onmessage = (message) => {
+          const event = JSON.parse(message.data);
+          if (event.type === "output") {
+            lastOutput = event.text.trim().split("\\n").slice(-1)[0] || lastOutput;
+            card.querySelector("div").textContent = lastOutput || "running";
+          }
+          if (event.type === "done") {
+            card.classList.remove("running");
+            card.classList.add(event.exit_code === 0 ? "done" : "failed");
+            card.querySelector("div").textContent = `exit ${event.exit_code}: ${lastOutput}`;
+          }
+        };
+      }
+      refreshSessions();
+    }
+
+    interruptButton.addEventListener("click", async () => {
+      if (!activeRunId) return;
+      await fetch(`/api/runs/${encodeURIComponent(activeRunId)}/interrupt`, { method: "POST" });
+    });
+
+    closeTerminalButton.addEventListener("click", () => {
+      terminalPanel.style.display = "none";
+    });
+
+    gitBranchAllButton.addEventListener("click", startGitBranchAll);
+    refreshSessionsButton.addEventListener("click", refreshSessions);
+    refreshSessions();
+
     console.log("INFO graph ready", {
       nodes: document.querySelectorAll("g.node[data-node-id]").length,
       repos: Object.keys(submoduleInfo).length,
@@ -732,6 +1183,132 @@ async def read_root() -> HTMLResponse:
         .replace("__ROOT_STATUS_STATE__", str(root_status["state"]))
     )
     return HTMLResponse(content=content)
+
+
+def repo_cwd(repo_key: str) -> Path:
+    if repo_key == ROOT_KEY:
+        return WORKSPACE_ROOT
+    modules = read_submodule_paths()
+    if repo_key not in modules:
+        raise HTTPException(status_code=404, detail=f"Unknown repository: {repo_key}")
+    path = WORKSPACE_ROOT / modules[repo_key]["path"]
+    if not path.exists():
+        raise HTTPException(status_code=404, detail=f"Repository path is missing: {repo_key}")
+    return path
+
+
+def repo_keys(include_root: bool = True) -> list[str]:
+    keys = sorted(read_submodule_paths())
+    return ([ROOT_KEY] if include_root else []) + keys
+
+
+def parse_meta_file(path: Path) -> dict[str, object]:
+    data: dict[str, object] = {"id": path.parent.name, "log_url": f"/api/runs/{path.parent.name}/log"}
+    command: list[str] = []
+    in_command = False
+    for line in path.read_text(errors="replace").splitlines():
+        if line == "command:":
+            in_command = True
+            continue
+        if in_command and line.startswith("  - "):
+            with contextlib.suppress(json.JSONDecodeError):
+                command.append(json.loads(line[4:]))
+            continue
+        in_command = False
+        if ": " in line:
+            key, value = line.split(": ", 1)
+            data[key] = value.strip().strip('"')
+    data["command"] = command
+    return data
+
+
+def recent_runs(limit: int = 50) -> list[dict[str, object]]:
+    metas = sorted(RUNS_ROOT.glob("*/*/meta.yaml"), key=lambda path: path.stat().st_mtime, reverse=True)
+    return [parse_meta_file(path) for path in metas[:limit]]
+
+
+@app.post("/api/runs/git-pull/{repo_key:path}")
+async def start_git_pull(repo_key: str) -> dict[str, str]:
+    cwd = repo_cwd(repo_key)
+    run = CommandRun(repo_key=repo_key, cwd=cwd, argv=["git", "pull", "--ff-only"], loop=asyncio.get_running_loop())
+    ACTIVE_RUNS[run.run_id] = run
+    run.start()
+    return {
+        "run_id": run.run_id,
+        "status": run.status,
+        "stream_url": f"/api/runs/{run.run_id}/stream",
+        "log_url": f"/api/runs/{run.run_id}/log",
+    }
+
+
+@app.post("/api/runs/git-branch-all")
+async def start_git_branch_all() -> dict[str, object]:
+    runs: list[dict[str, object]] = []
+    loop = asyncio.get_running_loop()
+    for repo_key in repo_keys(include_root=True):
+        cwd = repo_cwd(repo_key)
+        run = CommandRun(repo_key=repo_key, cwd=cwd, argv=["git", "branch", "--show-current"], loop=loop)
+        ACTIVE_RUNS[run.run_id] = run
+        run.start()
+        runs.append(run.payload())
+    return {"runs": runs}
+
+
+@app.get("/api/runs")
+async def list_runs() -> dict[str, object]:
+    live = {
+        run_id: run.payload()
+        for run_id, run in ACTIVE_RUNS.items()
+        if run.status in {"created", "running"}
+    }
+    return {"runs": recent_runs(), "live": live}
+
+
+@app.get("/api/runs/{run_id}/log")
+async def read_run_log(run_id: str) -> dict[str, str]:
+    run = ACTIVE_RUNS.get(run_id)
+    if not run:
+        matches = list(RUNS_ROOT.glob(f"*/*{run_id}*/output.log"))
+        if not matches:
+            raise HTTPException(status_code=404, detail="Unknown run")
+        return {"run_id": run_id, "log": matches[0].read_text(errors="replace")}
+    return {"run_id": run_id, "log": run.log_path.read_text(errors="replace") if run.log_path.exists() else ""}
+
+
+@app.post("/api/runs/{run_id}/interrupt")
+async def interrupt_run(run_id: str) -> dict[str, str]:
+    run = ACTIVE_RUNS.get(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Unknown run")
+    run.send_signal(signal.SIGINT)
+    return {"status": "interrupt_sent"}
+
+
+@app.websocket("/api/runs/{run_id}/stream")
+async def stream_run(websocket: WebSocket, run_id: str) -> None:
+    await websocket.accept()
+    run = ACTIVE_RUNS.get(run_id)
+    if not run:
+        await websocket.send_json({"type": "error", "message": "Unknown run"})
+        await websocket.close()
+        return
+
+    if run.log_path.exists():
+        await websocket.send_json({"type": "output", "text": run.log_path.read_text(errors="replace")})
+
+    queue = run.subscribe()
+    try:
+        while True:
+            text = await queue.get()
+            await websocket.send_json({"type": "output", "text": text})
+            if DONE_SENTINEL in text:
+                await websocket.send_json({"type": "done", "exit_code": run.exit_code})
+                await websocket.close()
+                return
+    except WebSocketDisconnect:
+        return
+    finally:
+        run.unsubscribe(queue)
 
 
 @app.post("/__project_viewer_shutdown")
