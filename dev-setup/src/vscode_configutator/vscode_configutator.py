@@ -64,8 +64,11 @@ class VSCodeConfigUpdater:
 
         workspace_str = self.workspace_folder
         os_sep = os.path.sep
-        pythonpath = ";".join(f"${{WORKSPACE_FOLDER}}{os_sep}{p}" for p in self.python_paths)
-        ppsuffix = ";${PYTHONPATH}" if add_pythonpath else ""
+        path_list_sep = os.pathsep
+        pythonpath = path_list_sep.join(
+            f"${{WORKSPACE_FOLDER}}{os_sep}{p}" for p in self.python_paths
+        )
+        ppsuffix = f"{path_list_sep}${{PYTHONPATH}}" if add_pythonpath else ""
 
         env_content = (
             f"WORKSPACE_FOLDER={workspace_str}\n"
@@ -106,15 +109,16 @@ class VSCodeConfigUpdater:
             f"${{workspaceFolder}}/{p}" for p in self.unix_slash_paths
         ]
 
-        ppsuffix = ";${env:PYTHONPATH}" if add_pythonpath else ""
+        win_suffix = ";${env:PYTHONPATH}" if add_pythonpath else ""
+        unix_suffix = ":${env:PYTHONPATH}" if add_pythonpath else ""
         settings.setdefault("terminal.integrated.env.windows", {})["PYTHONPATH"] = (
-            f"{win_paths}{ppsuffix}"
+            f"{win_paths}{win_suffix}"
         )
         settings.setdefault("terminal.integrated.env.linux", {})["PYTHONPATH"] = (
-            f"{unix_paths}{ppsuffix}"
+            f"{unix_paths}{unix_suffix}"
         )
         settings.setdefault("terminal.integrated.env.osx", {})["PYTHONPATH"] = (
-            f"{unix_paths}{ppsuffix}"
+            f"{unix_paths}{unix_suffix}"
         )
 
         if add_env:
@@ -131,18 +135,30 @@ class VSCodeConfigUpdater:
             launch_config = {"version": "0.2.0", "configurations": []}
 
         paths = [str(p).replace("\\", "/") for p in self.python_separator_paths]
-        win_paths = ";".join(f"${{workspaceFolder}}${{pathSeparator}}{p}" for p in paths)
-        ppsuffix = ";${env:PYTHONPATH}" if add_pythonpath else ""
+        path_list_sep = os.pathsep
+        joined_paths = path_list_sep.join(
+            f"${{workspaceFolder}}${{pathSeparator}}{p}" for p in paths
+        )
+        ppsuffix = f"{path_list_sep}${{env:PYTHONPATH}}" if add_pythonpath else ""
+        pythonpath = f"{joined_paths}{ppsuffix}"
 
-        python_config = None
-        for config in launch_config.get("configurations", []):
-            if config.get("name") == "Python: Current File":
-                python_config = config
-                break
+        config_name = "Grip: Current File"
+        configurations = launch_config.setdefault("configurations", [])
 
-        if not python_config:
+        matches = [c for c in configurations if c.get("name") == config_name]
+        if len(matches) > 1:
+            first = matches[0]
+            configurations[:] = [
+                c for c in configurations
+                if c.get("name") != config_name or c is first
+            ]
+            matches = [first]
+
+        if matches:
+            python_config = matches[0]
+        else:
             python_config = {
-                "name": "Grip: Current File",
+                "name": config_name,
                 "type": "python",
                 "request": "launch",
                 "program": "${file}",
@@ -150,9 +166,9 @@ class VSCodeConfigUpdater:
                 "console": "integratedTerminal",
                 "justMyCode": False,
             }
-            launch_config.setdefault("configurations", []).append(python_config)
+            configurations.append(python_config)
 
-        python_config.setdefault("env", {})["PYTHONPATH"] = f"{win_paths}{ppsuffix}"
+        python_config.setdefault("env", {})["PYTHONPATH"] = pythonpath
         self._save_json(launch_file, launch_config)
 
     @classmethod
@@ -212,7 +228,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--add_pythonpath",
-        type=bool,
+        action=argparse.BooleanOptionalAction,
         default=(os.environ.get("PYTHONPATH", None) is not None),
         help="Append existing PYTHONPATH",
     )
