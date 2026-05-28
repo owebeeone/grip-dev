@@ -32,3 +32,9 @@
 [submodule "yidl-lifecycle"]
 	path = yidl-lifecycle
 	url = git@github.com:owebeeone/yidl-lifecycle.git
+[submodule "astichi"]
+	path = astichi
+	url = git@github.com:owebeeone/astichi.git
+[submodule "yidl"]
+	path = yidl
+	url = git@github.com:owebeeone/yidl.git
