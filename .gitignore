@@ -7,3 +7,5 @@
 __pycache__/
 *.pyc
 scratch/
+.project_viewer_server.json
+.project_viewer_server.lock
