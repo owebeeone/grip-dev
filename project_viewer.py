@@ -23,6 +23,7 @@ from fastapi.responses import HTMLResponse
 
 
 PORT = 8000
+ROOT_KEY = "__root__"
 WORKSPACE_ROOT = Path(__file__).resolve().parent
 GITMODULES_PATH = WORKSPACE_ROOT / ".gitmodules"
 SENTINEL_PATH = WORKSPACE_ROOT / ".project_viewer_server.json"
@@ -198,6 +199,18 @@ def github_url(remote_url: str) -> str:
     return remote_url.removesuffix(".git")
 
 
+def git_remote_url(repo_path: Path) -> str:
+    result = subprocess.run(
+        ["git", "-C", str(repo_path), "config", "--get", "remote.origin.url"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 0 and result.stdout.strip():
+        return github_url(result.stdout.strip())
+    return ""
+
+
 def read_submodule_paths() -> dict[str, dict[str, str]]:
     parser = configparser.ConfigParser()
     parser.read(GITMODULES_PATH)
@@ -253,6 +266,23 @@ def read_description(repo_path: Path) -> tuple[str, str]:
     return "No project description found in pyproject.toml, package.json, or README.", "fallback"
 
 
+def read_version(repo_path: Path) -> tuple[str | None, str | None]:
+    version = first_regex(repo_path / "pyproject.toml", r'^\s*version\s*=\s*["\']([^"\']+)["\']')
+    if version:
+        return version, "pyproject.toml"
+
+    package_json = repo_path / "package.json"
+    if package_json.exists():
+        try:
+            value = json.loads(package_json.read_text()).get("version")
+        except json.JSONDecodeError:
+            value = None
+        if value:
+            return str(value), "package.json"
+
+    return None, None
+
+
 def git_status(repo_path: Path) -> dict[str, object]:
     if not repo_path.exists():
         return {
@@ -306,10 +336,29 @@ def read_submodules() -> dict[str, dict[str, object]]:
     for name, info in modules.items():
         repo_path = WORKSPACE_ROOT / str(info["path"])
         description, source = read_description(repo_path)
+        version, version_source = read_version(repo_path)
         info["description"] = description
         info["description_source"] = source
+        info["version"] = version
+        info["version_source"] = version_source
         info["status"] = git_status(repo_path)
     return modules
+
+
+def read_root_repo_info() -> dict[str, object]:
+    description, source = read_description(WORKSPACE_ROOT)
+    version, version_source = read_version(WORKSPACE_ROOT)
+    return {
+        "name": WORKSPACE_ROOT.name,
+        "path": ".",
+        "url": git_remote_url(WORKSPACE_ROOT),
+        "remote_url": git_remote_url(WORKSPACE_ROOT),
+        "description": description,
+        "description_source": source,
+        "version": version,
+        "version_source": version_source,
+        "status": git_status(WORKSPACE_ROOT),
+    }
 
 
 def add_node(dot: graphviz.Digraph, key: str, modules: dict[str, dict[str, object]]) -> None:
@@ -323,7 +372,6 @@ def add_node(dot: graphviz.Digraph, key: str, modules: dict[str, dict[str, objec
         _attributes={
             "fillcolor": style["fillcolor"],
             "color": style["color"],
-            "tooltip": f'{info["name"]}: {status["summary"]}',
         },
     )
 
@@ -432,6 +480,21 @@ HTML_TEMPLATE = r"""
       cursor: pointer;
       font-weight: 600;
     }
+    .toolbar button[data-node-id] {
+      border-width: 2px;
+    }
+    .toolbar button[data-status-state="clean"] {
+      border-color: #16a34a;
+      background: #f0fdf4;
+    }
+    .toolbar button[data-status-state="dirty"] {
+      border-color: #d97706;
+      background: #fffbeb;
+    }
+    .toolbar button[data-status-state="unavailable"] {
+      border-color: #6b7280;
+      background: #f9fafb;
+    }
     .legend {
       display: flex;
       gap: 10px;
@@ -525,6 +588,12 @@ HTML_TEMPLATE = r"""
   <p class="intro">Hover for repo information. Click a node for actions. Status is recomputed on each refresh.</p>
   <div class="toolbar">
     <button type="button" onclick="window.location.reload()">Refresh project view</button>
+    <button
+      id="root-status-button"
+      type="button"
+      data-node-id="__root__"
+      data-status-state="__ROOT_STATUS_STATE__"
+    >Root repo status</button>
     <div class="legend" aria-label="Git status legend">
       <span class="clean"><span class="swatch"></span>Clean</span>
       <span class="dirty"><span class="swatch"></span>Local changes</span>
@@ -537,17 +606,20 @@ HTML_TEMPLATE = r"""
   <script>
     const submoduleInfo = __SUBMODULE_DATA__;
     const graphContainer = document.getElementById("graph-container");
+    const rootButton = document.getElementById("root-status-button");
     const tooltip = document.getElementById("tooltip");
     const menu = document.getElementById("repo-menu");
 
     function nodeFromEvent(event) {
-      return event.target.closest("g.node[data-node-id]");
+      return event.target.closest("[data-node-id]");
     }
 
     function showTooltip(info, event) {
+      const version = info.version ? `Version ${info.version}` : "Version not found";
       tooltip.innerHTML = `
         <strong>${info.name}</strong>
         ${info.description}
+        <span class="meta">${version}</span>
         <span class="meta">${info.status.label}: ${info.status.summary}</span>
       `;
       tooltip.style.left = `${event.pageX + 12}px`;
@@ -565,6 +637,8 @@ HTML_TEMPLATE = r"""
         <dl>
           <dt>Path</dt><dd>${info.path}</dd>
           <dt>Status</dt><dd>${info.status.label}: ${info.status.summary}</dd>
+          <dt>Version</dt><dd>${info.version || "Not found"}</dd>
+          <dt>Version source</dt><dd>${info.version_source || "n/a"}</dd>
           <dt>Description source</dt><dd>${info.description_source}</dd>
         </dl>
         ${details}
@@ -599,7 +673,7 @@ HTML_TEMPLATE = r"""
       menu.setAttribute("aria-hidden", "true");
     }
 
-    graphContainer.addEventListener("mousemove", (event) => {
+    function handleInfoMove(event) {
       const node = nodeFromEvent(event);
       if (!node) {
         tooltip.style.display = "none";
@@ -607,13 +681,13 @@ HTML_TEMPLATE = r"""
       }
       const info = submoduleInfo[node.dataset.nodeId];
       if (info) showTooltip(info, event);
-    });
+    }
 
-    graphContainer.addEventListener("mouseleave", () => {
+    function handleInfoLeave() {
       tooltip.style.display = "none";
-    });
+    }
 
-    graphContainer.addEventListener("click", (event) => {
+    function handleInfoClick(event) {
       const node = nodeFromEvent(event);
       if (!node) return;
       event.preventDefault();
@@ -621,7 +695,14 @@ HTML_TEMPLATE = r"""
       tooltip.style.display = "none";
       const info = submoduleInfo[node.dataset.nodeId];
       if (info) showMenu(info, event);
-    });
+    }
+
+    graphContainer.addEventListener("mousemove", handleInfoMove);
+    graphContainer.addEventListener("mouseleave", handleInfoLeave);
+    graphContainer.addEventListener("click", handleInfoClick);
+    rootButton.addEventListener("mousemove", handleInfoMove);
+    rootButton.addEventListener("mouseleave", handleInfoLeave);
+    rootButton.addEventListener("click", handleInfoClick);
 
     document.addEventListener("click", (event) => {
       if (!menu.contains(event.target)) hideMenu();
@@ -640,10 +721,15 @@ HTML_TEMPLATE = r"""
 @app.get("/", response_class=HTMLResponse)
 async def read_root() -> HTMLResponse:
     submodules = read_submodules()
+    root_info = read_root_repo_info()
+    root_status = root_info["status"]
+    assert isinstance(root_status, dict)
+    view_info = {ROOT_KEY: root_info, **submodules}
     content = (
         HTML_TEMPLATE
         .replace("__GRAPH_SVG__", generate_graphviz_svg(submodules))
-        .replace("__SUBMODULE_DATA__", json.dumps(submodules))
+        .replace("__SUBMODULE_DATA__", json.dumps(view_info))
+        .replace("__ROOT_STATUS_STATE__", str(root_status["state"]))
     )
     return HTMLResponse(content=content)
 
